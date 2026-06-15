@@ -255,12 +255,12 @@ function NumPad(_ref) {
     }
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 58,
+      fontSize: 46,
       fontWeight: 900,
       color: value ? C.primaryDk : C.textLight,
       letterSpacing: 6,
       lineHeight: 1.1,
-      minHeight: 70
+      minHeight: 56
     }
   }, value || "—"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -292,9 +292,9 @@ function NumPad(_ref) {
       style: {
         background: isConfirm ? C.primaryDk : isBack ? C.bgSub : C.card,
         border: "1.5px solid ".concat(isConfirm ? C.primaryDk : C.border),
-        borderRadius: 14,
-        padding: "17px 0",
-        fontSize: isConfirm || isBack ? 24 : 28,
+        borderRadius: 12,
+        padding: "11px 0",
+        fontSize: isConfirm || isBack ? 19 : 22,
         fontWeight: 700,
         color: isConfirm ? "#fff" : isBack ? C.textMid : C.textDark,
         cursor: "pointer",
@@ -1501,6 +1501,8 @@ function CalendarTab(_ref9) {
   var _a19=useState(settings.visitDate||""),_a20=_slicedToArray(_a19,2); var fVisitDate=_a19[0],setFVisitDate=_a20[1];
   var _a21=useState(settings.prescriptionWeeks||4),_a22=_slicedToArray(_a21,2); var fWeeks=_a21[0],setFWeeks=_a22[1];
   var _a23=useState(false),_a24=_slicedToArray(_a23,2); var visitSaved=_a23[0],setVisitSaved=_a24[1];
+  var _a25=useState(null),_a26=_slicedToArray(_a25,2); var visitDelConf=_a25[0],setVisitDelConf=_a26[1];
+  var _a27=useState(null),_a28=_slicedToArray(_a27,2); var visitEditing=_a27[0],setVisitEditing=_a28[1];
 
   // settingsが変わったらフォームに反映
   React.useEffect(function(){
@@ -1714,18 +1716,182 @@ function CalendarTab(_ref9) {
         /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
           vhist.map(function(r){
             var d=new Date(r.date);
-            return /*#__PURE__*/React.createElement("div",{key:r.id,style:{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bgSub,borderRadius:10,border:"1px solid "+C.border}},
-              /*#__PURE__*/React.createElement("span",{style:{fontSize:16}},"🏥"),
-              /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-                /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:13,fontWeight:600}},d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日 ("+WD[d.getDay()]+")"),
-                r.systolic?/*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11}},r.systolic+"/"+r.diastolic+" mmHg"):null),
-              /*#__PURE__*/React.createElement("button",{
-                onClick:function(){
-                  var pd=String(d.getFullYear()+"-"+(String(d.getMonth()+1).padStart(2,"0"))+"-"+(String(d.getDate()).padStart(2,"0")));
-                  setFVisitDate(pd);setSubTab("calendar");
-                },
-                style:{fontSize:11,color:"#7c3aed",background:"#f5f0ff",border:"1px solid #a78bfa",borderRadius:7,padding:"3px 8px",cursor:"pointer"}
-              },"この日を設定"));
+            var isEditingThis = visitEditing && visitEditing.id===r.id;
+            var isDelConfThis = visitDelConf===r.id;
+            // 期間計算（この通院日〜次回通院日）
+            var vIdx = vhist.indexOf(r);
+            var pStart = new Date(r.date); pStart.setHours(0,0,0,0);
+            var pEnd = vIdx===0
+              ? (nextVisitObj ? new Date(nextVisitObj) : null)
+              : (function(){ var e=new Date(vhist[vIdx-1].date); e.setHours(23,59,59,999); return e; })();
+            var pRecs = records.filter(function(rec){
+              if (rec.mensOnly||!rec.systolic) return false;
+              var rd=new Date(rec.date);
+              return pEnd ? (rd>=pStart&&rd<=pEnd) : rd>=pStart;
+            });
+            var pMaxSys = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.systolic;})) : null;
+            var pMaxDia = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.diastolic;})) : null;
+            // 編集中のisVisit状態
+            return /*#__PURE__*/React.createElement("div",{key:r.id,style:{
+              background:isEditingThis?"#f5f0ff":C.bgSub,
+              borderRadius:12,border:"1.5px solid "+(isEditingThis?"#a78bfa":C.border),
+              padding:"10px 12px",transition:"all 0.2s"}},
+              // 通常表示行
+              /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+                // 日付行＋ボタン（横並び）
+                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                  /*#__PURE__*/React.createElement("span",{style:{fontSize:15}},"🏥"),
+                  /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},
+                    d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日 ("+WD[d.getDay()]+")"),
+                  !isDelConfThis&&!isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4,flexShrink:0}},
+                    /*#__PURE__*/React.createElement("button",{
+                      onClick:function(){setVisitEditing(r);setVisitDelConf(null);},
+                      style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1}
+                    },"✏️"),
+                    /*#__PURE__*/React.createElement("button",{
+                      onClick:function(){setVisitDelConf(r.id);setVisitEditing(null);},
+                      style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1,opacity:0.7}
+                    },"🗑️")
+                  )
+                ),
+                // 最高値・件数バッジ
+                pRecs.length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:5,flexWrap:"wrap",paddingLeft:23}},
+                  /*#__PURE__*/React.createElement("div",{style:{background:"#fff0f5",border:"1px solid #f9c8da",borderRadius:6,padding:"2px 8px",fontSize:10,display:"flex",alignItems:"center",gap:3}},
+                    /*#__PURE__*/React.createElement("span",{style:{color:"#e85050"}},"🔴"),
+                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最高 "),
+                    /*#__PURE__*/React.createElement("span",{style:{color:"#c03030",fontWeight:800}},pMaxSys),
+                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"/"),
+                    /*#__PURE__*/React.createElement("span",{style:{color:"#1a7a1a",fontWeight:800}},pMaxDia),
+                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}}," mmHg")),
+                  /*#__PURE__*/React.createElement("div",{style:{background:"#f0f0f0",border:"1px solid #ddd",borderRadius:6,padding:"2px 8px",fontSize:10,color:C.textLight}},
+                    pRecs.length+"件"+(pEnd?" / "+(pStart.getMonth()+1)+"/"+pStart.getDate()+"〜"+(pEnd.getMonth()+1)+"/"+pEnd.getDate():"〜現在"))
+                ),
+                // メモ表示
+                r.memo&&/*#__PURE__*/React.createElement("div",{style:{paddingLeft:23,color:C.textMid,fontSize:11,marginTop:2}},
+                  "📝 "+r.memo)
+              ),
+              // 削除確認
+              isDelConfThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginTop:8}},
+                /*#__PURE__*/React.createElement("div",{style:{flex:1,color:"#c03030",fontSize:12,fontWeight:600,alignSelf:"center"}},"通院フラグを外しますか？（血圧記録は残ります）"),
+                /*#__PURE__*/React.createElement("button",{
+                  onClick:function(){
+                    // 記録自体は残し、通院フラグのみOFFにする
+                    onUpdate(_objectSpread(_objectSpread({},r),{},{isVisit:false}));
+                    setVisitDelConf(null);
+                  },
+                  style:{background:"#fff1f1",border:"1.5px solid #f87171",borderRadius:8,padding:"5px 12px",cursor:"pointer",color:"#e06060",fontSize:12,fontWeight:700}
+                },"通院フラグを外す"),
+                /*#__PURE__*/React.createElement("button",{
+                  onClick:function(){setVisitDelConf(null);},
+                  style:{background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:8,padding:"5px 10px",cursor:"pointer",color:C.textMid,fontSize:12}
+                },"キャンセル")
+              ),
+              // 編集フォーム（isVisitのON/OFFと、この日を設定）
+              isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{marginTop:10,borderTop:"1px solid #c4b5fd",paddingTop:10,display:"flex",flexDirection:"column",gap:10}},
+                /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700,marginBottom:2}},"✏️ 編集"),
+
+                // ── 通院フラグ ──────────────────────────────────
+                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#ede9fe",borderRadius:8}},
+                  /*#__PURE__*/React.createElement("span",{style:{fontSize:14}},"🏥"),
+                  /*#__PURE__*/React.createElement("span",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:500}},"通院フラグ"),
+                  /*#__PURE__*/React.createElement(ToggleSwitch,{on:visitEditing.isVisit||false,
+                    onChange:function(v){
+                      setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{isVisit:v}));
+                    },activeColor:"#7c3aed"})
+                ),
+
+                // ── 通院設定に反映チェック ─────────────────────
+                /*#__PURE__*/React.createElement("div",{style:{background:"#f5f0ff",border:"1.5px solid #a78bfa",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}},
+                  /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700}},"⚙️ 通院設定（処方・次回通院）に反映"),
+                  /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11}},"この通院日を「前回通院日」として設定し、次回通院日を再計算します"),
+
+                  // 前回通院日（この記録の日付で自動セット）
+                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                    /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},"前回通院日"),
+                    /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:13,fontWeight:700}},
+                      (new Date(visitEditing.date)).getFullYear()+"年"+
+                      ((new Date(visitEditing.date)).getMonth()+1)+"月"+
+                      (new Date(visitEditing.date)).getDate()+"日"
+                    )
+                  ),
+
+                  // 処方週数
+                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                    /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},"処方週数"),
+                    /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:3}},
+                      [1,2,3,4].map(function(w){
+                        var act=(visitEditing._editWeeks||fWeeks||4)===w;
+                        return /*#__PURE__*/React.createElement("button",{key:w,
+                          onClick:function(){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editWeeks:w}));},
+                          style:{width:34,height:30,background:act?"#7c3aed":C.bgSub,
+                            border:"1.5px solid "+(act?"#7c3aed":C.border),borderRadius:7,
+                            cursor:"pointer",color:act?"#fff":C.textMid,fontSize:12,fontWeight:act?800:500,transition:"all 0.15s"}
+                        },w);
+                      }),
+                      /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,margin:"0 3px"}},"週 /"),
+                      /*#__PURE__*/React.createElement("input",{
+                        type:"number",min:"1",max:"52",
+                        value:(visitEditing._editWeeks||fWeeks||4)>4?(visitEditing._editWeeks||fWeeks):"",
+                        onChange:function(e){if(e.target.value) setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editWeeks:parseInt(e.target.value)}));},
+                        placeholder:"他",
+                        style:{width:46,background:C.bg,color:C.textDark,border:"1.5px solid "+((visitEditing._editWeeks||fWeeks||4)>4?"#7c3aed":C.border),
+                          borderRadius:7,padding:"4px 5px",fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"center"}
+                      }),
+                      /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,marginLeft:2}},"週")
+                    )
+                  ),
+
+                  // 次回通院プレビュー
+                  (function(){
+                    var w=visitEditing._editWeeks||fWeeks||4;
+                    var vd=new Date(visitEditing.date);
+                    var nv=new Date(vd.getTime()+w*7*86400000);
+                    var WDx=["日","月","火","水","木","金","土"];
+                    return /*#__PURE__*/React.createElement("div",{style:{background:"#ede9fe",borderRadius:8,padding:"6px 10px",fontSize:11,color:"#5b21b6",fontWeight:600}},
+                      "🗓️ 次回通院予定: "+nv.getFullYear()+"年"+(nv.getMonth()+1)+"月"+nv.getDate()+"日（"+WDx[nv.getDay()]+"）"
+                    );
+                  })()
+                ),
+
+                // ── メモ編集 ─────────────────────────────────
+                /*#__PURE__*/React.createElement("input",{
+                  type:"text",
+                  value:visitEditing.memo||"",
+                  onChange:function(e){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{memo:e.target.value}));},
+                  placeholder:"メモを編集",
+                  style:{width:"100%",boxSizing:"border-box",background:C.bg,color:C.textDark,
+                    border:"1.5px solid #a78bfa",borderRadius:8,padding:"7px 10px",fontSize:13,
+                    fontFamily:"inherit",outline:"none"}
+                }),
+
+                // ── 保存・キャンセル ──────────────────────────
+                /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8}},
+                  /*#__PURE__*/React.createElement("button",{
+                    onClick:function(){
+                      // 記録を更新
+                      onUpdate(visitEditing);
+                      // 通院設定（処方週数・前回通院日）を更新
+                      var w=visitEditing._editWeeks||fWeeks||4;
+                      var vd=new Date(visitEditing.date);
+                      var dateStr=vd.getFullYear()+"-"+String(vd.getMonth()+1).padStart(2,"0")+"-"+String(vd.getDate()).padStart(2,"0");
+                      saveVisitSettings._override={visitDate:dateStr,prescriptionWeeks:w};
+                      if(onSaveSettings) onSaveSettings(_objectSpread(_objectSpread({},settings),{},{visitDate:dateStr,prescriptionWeeks:w}));
+                      setFVisitDate(dateStr);
+                      setFWeeks(w);
+                      setVisitEditing(null);
+                    },
+                    style:{flex:2,background:"#7c3aed",border:"none",borderRadius:10,padding:"10px 0",
+                      cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700,
+                      boxShadow:"0 3px 10px rgba(124,58,237,0.3)"}
+                  },"💾 記録＋設定を保存"),
+                  /*#__PURE__*/React.createElement("button",{
+                    onClick:function(){setVisitEditing(null);},
+                    style:{flex:1,background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:10,
+                      padding:"10px 0",cursor:"pointer",color:C.textMid,fontSize:13}
+                  },"キャンセル")
+                )
+              )
+            );
           }))
       ),
 
@@ -3185,9 +3351,15 @@ window.startApp();
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./sw.js')
-      .then(function () { console.log('[BP] SW registered'); })
-      .catch(function (e) { console.log('[BP] SW error:', e); });
+    // sw.js の存在確認してから登録（404エラー防止）
+    fetch('./sw.js', {method: 'HEAD'})
+      .then(function(res) {
+        if (res.ok) {
+          return navigator.serviceWorker.register('./sw.js');
+        }
+      })
+      .then(function(reg) { if (reg) console.log('[BP] SW registered'); })
+      .catch(function() {});
   });
 }
 </script>
