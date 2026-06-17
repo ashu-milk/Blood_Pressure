@@ -941,7 +941,7 @@ function BPTracker() {
     style: {
       flex: 1,
       overflowY: "auto",
-      padding: tab === "record" ? "10px 14px 6px" : "16px 14px " + (numpadOpen ? "16px" : "100px"),
+      padding: tab === "record" ? "10px 14px " + (numpadOpen ? "6px" : "70px") : "16px 14px " + (numpadOpen ? "16px" : "100px"),
       display: tab === "record" ? "flex" : "block",
       flexDirection: "column",
       minHeight: 0
@@ -1276,9 +1276,7 @@ function RecordTab(_ref7) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: sc(7),
-      flex: 1,
-      minHeight: 0
+      gap: sc(7)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1456,7 +1454,7 @@ function RecordTab(_ref7) {
       return goNext("pulse");
     },
     hint: "\u2713 \u5B8C\u4E86"
-  })))), !activeField && /*#__PURE__*/React.createElement("div", {
+  })))), !activeField && viewportH >= 480 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -1600,9 +1598,7 @@ function RecordTab(_ref7) {
       padding: sc(8) + "px " + sc(12) + "px",
       border: "1.5px solid ".concat(C.border),
       boxShadow: "0 2px 12px ".concat(_theme.cardShadow),
-      flex: "1 1 auto",
-      minHeight: sc(56),
-      maxHeight: Math.max(90, Math.min(280, viewportH * 0.28)),
+      flexShrink: 0,
       display: "flex",
       flexDirection: "column"
     }
@@ -1620,10 +1616,9 @@ function RecordTab(_ref7) {
       return setMemo(e.target.value);
     },
     placeholder: "\u4F8B: \u982D\u75DB\u3042\u308A / \u964D\u5727\u5264\u670D\u7528 / \u904B\u52D5\u5F8C",
+    rows: 2,
     style: {
       width: "100%",
-      flex: 1,
-      minHeight: 0,
       boxSizing: "border-box",
       background: C.bg,
       color: C.textDark,
@@ -1660,10 +1655,7 @@ function RecordTab(_ref7) {
       gap: 10,
       boxShadow: saved ? "0 6px 18px rgba(184,228,184,0.5)" : "0 4px 16px rgba(244,160,188,0.38)",
       transition: "all 0.3s",
-      flexShrink: 0,
-      position: "sticky",
-      bottom: 0,
-      zIndex: 50
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
