@@ -7,6 +7,8 @@
   <title>血圧手帳</title>
   <style>
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    #root{height:100%}
     body{background:#fff5f8;font-family:'Hiragino Sans','Noto Sans JP',sans-serif}
     input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
     input[type=number]{-moz-appearance:textfield}
@@ -776,6 +778,10 @@ function BPTracker() {
     timeOfDay = _useState12[0],
     setTimeOfDay = _useState12[1];
   var isEvening = timeOfDay === "evening";
+  var _useStateNP = useState(false),
+    _useStateNP2 = _slicedToArray(_useStateNP, 2),
+    numpadOpen = _useStateNP2[0],
+    setNumpadOpen = _useStateNP2[1];
 
   // テーマをグローバルに反映し、強制再レンダリング
   var _useState13 = useState("pink"),
@@ -801,6 +807,9 @@ function BPTracker() {
       setLoading(false);
     });
   }, []);
+  useEffect(function () {
+    setNumpadOpen(false);
+  }, [tab]);
   var addRecord = useCallback(function (rec) {
     var n = [rec].concat(_toConsumableArray(records));
     setRecords(n);
@@ -861,32 +870,35 @@ function BPTracker() {
     key: themeKey,
     style: {
       minHeight: "100vh",
+      height: "100dvh",
       background: isEvening ? THEME_BLUE.bg : THEME_PINK.bg,
       fontFamily: "'Noto Sans JP','Hiragino Sans',sans-serif",
       maxWidth: 540,
       margin: "0 auto",
       display: "flex",
       flexDirection: "column",
-      transition: "background 0.5s ease"
+      transition: "background 0.5s ease",
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       background: isEvening ? THEME_BLUE.headerBg : THEME_PINK.headerBg,
-      padding: "14px 20px 12px",
+      padding: tab === "record" ? "8px 20px 7px" : "14px 20px 12px",
       position: "sticky",
       top: 0,
       zIndex: 200,
+      flexShrink: 0,
       boxShadow: "0 4px 18px ".concat(isEvening ? THEME_BLUE.headerShadow : THEME_PINK.headerShadow),
       transition: "background 0.4s, box-shadow 0.4s"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: "#fff",
-      fontSize: 20,
+      fontSize: tab === "record" ? 16 : 20,
       fontWeight: 500,
       letterSpacing: 1
     }
-  }, isEvening ? "🌙" : "🌼", " \u8840\u5727\u624B\u5E33"), settings.userName && /*#__PURE__*/React.createElement("div", {
+  }, isEvening ? "🌙" : "🌼", " \u8840\u5727\u624B\u5E33"), settings.userName && tab !== "record" && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "rgba(255,255,255,0.85)",
       fontSize: 12,
@@ -896,14 +908,18 @@ function BPTracker() {
     style: {
       flex: 1,
       overflowY: "auto",
-      padding: "16px 14px 100px"
+      padding: tab === "record" ? "10px 14px 6px" : "16px 14px " + (numpadOpen ? "16px" : "100px"),
+      display: tab === "record" ? "flex" : "block",
+      flexDirection: "column",
+      minHeight: 0
     }
   }, tab === "record" && /*#__PURE__*/React.createElement(RecordTab, {
     onAdd: addRecord,
     settings: settings,
     timeOfDay: timeOfDay,
     onTimeChange: setTimeOfDay,
-    records: records
+    records: records,
+    onNumpadChange: setNumpadOpen
   }), tab === "calendar" && /*#__PURE__*/React.createElement(CalendarTab, {
     records: records,
     onAdd: addRecord,
@@ -926,7 +942,7 @@ function BPTracker() {
       persistRecords(imported.records || records);
       if (imported.settings) { saveSettings(imported.settings); }
     }
-  })), /*#__PURE__*/React.createElement("div", {
+  })), !numpadOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       bottom: 0,
@@ -1031,14 +1047,15 @@ function MensForecastBanner(_ref6) {
       background: bg,
       border: "1.5px solid ".concat(border),
       borderRadius: 14,
-      padding: "12px 14px",
+      padding: "8px 14px",
       display: "flex",
       alignItems: "center",
-      gap: 12
+      gap: 12,
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 26,
+      fontSize: 22,
       flexShrink: 0
     }
   }, icon), /*#__PURE__*/React.createElement("div", {
@@ -1081,6 +1098,7 @@ function RecordTab(_ref7) {
     onTimeChange = _ref7.onTimeChange,
     selectedDate = _ref7.selectedDate,
     onClearDate = _ref7.onClearDate,
+    onNumpadChange = _ref7.onNumpadChange,
     _ref7$records = _ref7.records,
     records = _ref7$records === void 0 ? [] : _ref7$records;
   var _useState15 = useState(""),
@@ -1128,6 +1146,9 @@ function RecordTab(_ref7) {
   var goNext = function goNext(current) {
     if (current === "sys") setActiveField("dia");else if (current === "dia") setActiveField("pulse");else setActiveField(null);
   };
+  useEffect(function () {
+    if (onNumpadChange) onNumpadChange(!!activeField);
+  }, [activeField]);
 
   // 生理周期計算
   var _calcMensCycle = calcMensCycle(records),
@@ -1214,19 +1235,20 @@ function RecordTab(_ref7) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: 12
+      gap: 7
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
       gap: 8,
-      flexWrap: "wrap"
+      flexWrap: "wrap",
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textDark,
-      fontSize: 18,
+      fontSize: 14,
       fontWeight: 500
     }
   }, dateStr), selectedDate && /*#__PURE__*/React.createElement("button", {
@@ -1240,13 +1262,14 @@ function RecordTab(_ref7) {
       color: C.textMid,
       cursor: "pointer"
     }
-  }, "\u2715 \u4ECA\u65E5\u306E\u8A18\u9332\u306B\u623B\u3059")), mensInfo && /*#__PURE__*/React.createElement(MensForecastBanner, {
+  }, "\u2715 \u4ECA\u65E5\u306E\u8A18\u9332\u306B\u623B\u3059")), !activeField && mensInfo && /*#__PURE__*/React.createElement(MensForecastBanner, {
     info: mensInfo,
     startCount: startDates.length
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 8,
+      flexShrink: 0
     }
   }, TIME_OPTS.map(function (o) {
     return /*#__PURE__*/React.createElement("button", {
@@ -1259,18 +1282,19 @@ function RecordTab(_ref7) {
         background: time === o.key ? o.key === "evening" ? THEME_BLUE.primary : THEME_PINK.primary : C.card,
         border: "1.5px solid ".concat(time === o.key ? o.key === "evening" ? THEME_BLUE.primaryDk : THEME_PINK.primaryDk : C.border),
         borderRadius: 12,
-        padding: "9px 0",
+        padding: "6px 0",
         cursor: "pointer",
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
         alignItems: "center",
-        gap: 2,
+        justifyContent: "center",
+        gap: 5,
         boxShadow: time === o.key ? "0 4px 14px ".concat(o.key === "evening" ? THEME_BLUE.headerShadow : THEME_PINK.headerShadow) : "none",
         transition: "all 0.3s"
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 18
+        fontSize: 15
       }
     }, o.icon), /*#__PURE__*/React.createElement("span", {
       style: {
@@ -1279,7 +1303,7 @@ function RecordTab(_ref7) {
         color: time === o.key ? "#fff" : C.textMid
       }
     }, o.label));
-  })), cat && /*#__PURE__*/React.createElement("div", {
+  })), cat && !activeField && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "inline-flex",
       alignItems: "center",
@@ -1287,26 +1311,43 @@ function RecordTab(_ref7) {
       alignSelf: "flex-start",
       border: "2px solid ".concat(cat.color),
       borderRadius: 20,
-      padding: "6px 16px",
+      padding: "3px 14px",
       background: cat.bg,
-      boxShadow: "0 3px 10px ".concat(cat.color, "33")
+      boxShadow: "0 3px 10px ".concat(cat.color, "33"),
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 16
+      fontSize: 14
     }
   }, cat.emoji), /*#__PURE__*/React.createElement("span", {
     style: {
       color: cat.color,
       fontWeight: 900,
-      fontSize: 15
+      fontSize: 13
     }
-  }, cat.label)), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(Label, null, "\uD83E\uDE78 \u8840\u5727\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044"), /*#__PURE__*/React.createElement("div", {
+  }, cat.label)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      borderRadius: 16,
+      padding: "10px 12px",
+      border: "1.5px solid ".concat(C.border),
+      boxShadow: "0 2px 12px ".concat(_theme.cardShadow),
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textLight,
+      fontSize: 12,
+      fontWeight: 700,
+      marginBottom: 6
+    }
+  }, "\uD83E\uDE78 \u8840\u5727\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "flex-end",
       gap: 8,
-      marginBottom: 16
+      marginBottom: 8
     }
   }, /*#__PURE__*/React.createElement(NumField, {
     label: "\u53CE\u7E2E\u671F\uFF08\u4E0A\uFF09",
@@ -1327,9 +1368,9 @@ function RecordTab(_ref7) {
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.primary,
-      fontSize: 36,
+      fontSize: 30,
       fontWeight: 300,
-      paddingBottom: 14,
+      paddingBottom: 10,
       flexShrink: 0
     }
   }, "/"), /*#__PURE__*/React.createElement(NumField, {
@@ -1348,14 +1389,10 @@ function RecordTab(_ref7) {
       return goNext("dia");
     },
     hint: "\u2192 \u8108\u62CD\u3078"
-  })), /*#__PURE__*/React.createElement(Label, null, "\uD83D\uDC93 \u8108\u62CD (\u56DE/\u5206)"), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 150
+      width: 110,
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(NumField, {
     label: "\u8108\u62CD",
@@ -1373,65 +1410,174 @@ function RecordTab(_ref7) {
       return goNext("pulse");
     },
     hint: "\u2713 \u5B8C\u4E86"
-  })))), /*#__PURE__*/React.createElement("div", {
+  })))), !activeField && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
       gap: 6,
       background: C.bgSub,
       borderRadius: 10,
-      padding: "8px 12px",
-      border: "1px solid ".concat(C.border)
+      padding: "5px 12px",
+      border: "1px solid ".concat(C.border),
+      flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 14
+      fontSize: 13
     }
   }, "\uD83C\uDFAF"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.textMid,
-      fontSize: 12
+      fontSize: 11
     }
-  }, "\u76EE\u6A19: ", settings.systolicGoal, "/", settings.diastolicGoal, "\u3000 \u8B66\u544A: ", settings.systolicWarning, "/", settings.diastolicWarning, " mmHg")), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+  }, "\u76EE\u6A19: ", settings.systolicGoal, "/", settings.diastolicGoal, "\u3000 \u8B66\u544A: ", settings.systolicWarning, "/", settings.diastolicWarning, " mmHg")), !activeField && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 4,
+      background: C.card,
+      borderRadius: 12,
+      padding: "8px 8px",
+      border: "1.5px solid ".concat(C.border)
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 10
+      gap: 4,
+      minWidth: 0,
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 22
+      fontSize: 15,
+      flexShrink: 0
     }
   }, "\uD83C\uDF3C"), /*#__PURE__*/React.createElement("span", {
     style: {
-      flex: 1,
       color: C.textDark,
-      fontSize: 16,
-      fontWeight: 500
+      fontSize: 11,
+      fontWeight: 500,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
     }
-  }, "\u751F\u7406\u4E2D"), /*#__PURE__*/React.createElement(ToggleSwitch, {
+  }, "\u751F\u7406\u4E2D")), /*#__PURE__*/React.createElement(ToggleSwitch, {
     on: mens,
     onChange: setMens,
     activeColor: C.primaryDk
-  }))), /*#__PURE__*/React.createElement(Card, null,
-    /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10}},
-      /*#__PURE__*/React.createElement("span",{style:{fontSize:22}},"🏥"),
-      /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:16,fontWeight:500}},"通院した"),
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},"本日病院を受診した場合にON")),
-      /*#__PURE__*/React.createElement(ToggleSwitch,{on:isVisit,onChange:setIsVisit,activeColor:"#7c3aed"}))), /*#__PURE__*/React.createElement(Card, null,
-    /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10}},
-      /*#__PURE__*/React.createElement("span",{style:{fontSize:22}},"💊"),
-      /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:16,fontWeight:500}},"ダブル錠服薬"),
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},"通常の2倍の副作用がある剤を服用した場合に ON")),
-      /*#__PURE__*/React.createElement(ToggleSwitch,{on:doubleTab,onChange:setDoubleTab,activeColor:"#e67e22"}))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(Label, null, "\uD83D\uDCDD \u30E1\u30E2\uFF08\u4F53\u8ABF\u30FB\u670D\u85AC\u306A\u3069\uFF09"), /*#__PURE__*/React.createElement("textarea", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 4,
+      background: C.card,
+      borderRadius: 12,
+      padding: "8px 8px",
+      border: "1.5px solid ".concat(C.border)
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      minWidth: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15,
+      flexShrink: 0
+    }
+  }, "\uD83C\uDFE5"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textDark,
+      fontSize: 11,
+      fontWeight: 500,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, "\u901A\u9662\u3057\u305F")), /*#__PURE__*/React.createElement(ToggleSwitch, {
+    on: isVisit,
+    onChange: setIsVisit,
+    activeColor: "#7c3aed"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 4,
+      background: C.card,
+      borderRadius: 12,
+      padding: "8px 8px",
+      border: "1.5px solid ".concat(C.border)
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      minWidth: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15,
+      flexShrink: 0
+    }
+  }, "\uD83D\uDC8A"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textDark,
+      fontSize: 11,
+      fontWeight: 500,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, "\u30C0\u30D6\u30EB\u9332")), /*#__PURE__*/React.createElement(ToggleSwitch, {
+    on: doubleTab,
+    onChange: setDoubleTab,
+    activeColor: "#e67e22"
+  }))), !activeField && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      borderRadius: 16,
+      padding: "8px 12px",
+      border: "1.5px solid ".concat(C.border),
+      boxShadow: "0 2px 12px ".concat(_theme.cardShadow),
+      flexShrink: 0,
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textLight,
+      fontSize: 11,
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "\uD83D\uDCDD \u30E1\u30E2\uFF08\u4F53\u8ABF\u30FB\u670D\u85AC\u306A\u3069\uFF09"), /*#__PURE__*/React.createElement("textarea", {
     value: memo,
     onChange: function onChange(e) {
       return setMemo(e.target.value);
     },
     placeholder: "\u4F8B: \u982D\u75DB\u3042\u308A / \u964D\u5727\u5264\u670D\u7528 / \u904B\u52D5\u5F8C",
-    rows: 3,
+    rows: 2,
     style: {
       width: "100%",
       boxSizing: "border-box",
@@ -1439,21 +1585,22 @@ function RecordTab(_ref7) {
       color: C.textDark,
       border: "1.5px solid ".concat(C.border),
       borderRadius: 10,
-      padding: "10px 12px",
-      fontSize: 14,
+      padding: "8px 10px",
+      fontSize: 13,
       fontFamily: "inherit",
-      resize: "vertical",
+      resize: "none",
       outline: "none"
     }
   })), error && /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.danger,
-      fontSize: 13,
+      fontSize: 12,
       background: "#fff1f1",
       borderRadius: 10,
-      padding: "10px 14px",
+      padding: "8px 12px",
       border: "1px solid ".concat(C.danger, "44"),
-      fontWeight: 700
+      fontWeight: 700,
+      flexShrink: 0
     }
   }, "\u26A0\uFE0F ", error), /*#__PURE__*/React.createElement("button", {
     onClick: handleSave,
@@ -1461,23 +1608,27 @@ function RecordTab(_ref7) {
       background: saved ? "#b8e4b8" : "#f4a0bc",
       border: "none",
       borderRadius: 16,
-      padding: "16px 0",
+      padding: "12px 0",
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       gap: 10,
       boxShadow: saved ? "0 6px 18px rgba(184,228,184,0.5)" : "0 4px 16px rgba(244,160,188,0.38)",
-      transition: "all 0.3s"
+      transition: "all 0.3s",
+      flexShrink: 0,
+      position: "sticky",
+      bottom: 0,
+      zIndex: 50
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 22
+      fontSize: 20
     }
   }, saved ? "✅" : "💾"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#fff",
-      fontSize: 17,
+      fontSize: 16,
       fontWeight: 500
     }
   }, saved ? "保存しました！" : "保存する")));
