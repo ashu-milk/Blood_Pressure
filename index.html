@@ -215,8 +215,9 @@ function NumPad(_ref) {
     _ref$scale = _ref.scale,
     scale = _ref$scale === void 0 ? 1 : _ref$scale;
   var sc3 = function sc3(px) {
-    return Math.round(px * scale * 10) / 10;
+    return Math.round(px * scale * 0.84 * 10) / 10;
   };
+  var FOOTER_H = 64;
   var handleKey = function handleKey(k) {
     if (k === "⌫") {
       onChange(value.slice(0, -1));
@@ -235,7 +236,7 @@ function NumPad(_ref) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
-      bottom: 0,
+      bottom: FOOTER_H,
       left: "50%",
       transform: "translateX(-50%)",
       width: "100%",
@@ -243,9 +244,9 @@ function NumPad(_ref) {
       zIndex: 999,
       background: _theme.bg,
       borderTop: "2px solid ".concat(C.border),
-      borderRadius: "22px 22px 0 0",
+      borderRadius: "18px 18px 0 0",
       boxShadow: "0 -10px 40px rgba(244,114,182,0.2)",
-      padding: sc3(12) + "px 14px calc(" + sc3(12) + "px + env(safe-area-inset-bottom, 0px))",
+      padding: sc3(12) + "px 14px",
       boxSizing: "border-box"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -941,7 +942,7 @@ function BPTracker() {
     style: {
       flex: 1,
       overflowY: "auto",
-      padding: tab === "record" ? "10px 14px " + (numpadOpen ? "6px" : "70px") : "16px 14px " + (numpadOpen ? "16px" : "100px"),
+      padding: tab === "record" ? "10px 14px 70px" : "16px 14px " + (numpadOpen ? "16px" : "100px"),
       display: tab === "record" ? "flex" : "block",
       flexDirection: "column",
       minHeight: 0
@@ -976,7 +977,7 @@ function BPTracker() {
       persistRecords(imported.records || records);
       if (imported.settings) { saveSettings(imported.settings); }
     }
-  })), !numpadOpen && /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       bottom: 0,
@@ -988,7 +989,8 @@ function BPTracker() {
       borderTop: "1.5px solid ".concat(isEvening ? THEME_BLUE.border : THEME_PINK.border),
       display: "flex",
       boxShadow: "0 -4px 14px ".concat(isEvening ? THEME_BLUE.navShadow : THEME_PINK.navShadow),
-      transition: "background 0.4s"
+      transition: "background 0.4s",
+      zIndex: 300
     }
   }, TABS.map(function (t) {
     return /*#__PURE__*/React.createElement("button", {
