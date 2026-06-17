@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>血圧手帳</title>
   <style>
@@ -211,7 +211,12 @@ function NumPad(_ref) {
     label = _ref.label,
     max = _ref.max,
     min = _ref.min,
-    hint = _ref.hint;
+    hint = _ref.hint,
+    _ref$scale = _ref.scale,
+    scale = _ref$scale === void 0 ? 1 : _ref$scale;
+  var sc3 = function sc3(px) {
+    return Math.round(px * scale * 10) / 10;
+  };
   var handleKey = function handleKey(k) {
     if (k === "⌫") {
       onChange(value.slice(0, -1));
@@ -240,34 +245,35 @@ function NumPad(_ref) {
       borderTop: "2px solid ".concat(C.border),
       borderRadius: "22px 22px 0 0",
       boxShadow: "0 -10px 40px rgba(244,114,182,0.2)",
-      padding: "14px 14px 28px"
+      padding: sc3(12) + "px 14px calc(" + sc3(12) + "px + env(safe-area-inset-bottom, 0px))",
+      boxSizing: "border-box"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
-      marginBottom: 10
+      marginBottom: sc3(8)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textLight,
-      fontSize: 12,
+      fontSize: sc3(12),
       fontWeight: 600,
       marginBottom: 3,
       letterSpacing: 1
     }
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 46,
+      fontSize: sc3(40),
       fontWeight: 900,
       color: value ? C.primaryDk : C.textLight,
       letterSpacing: 6,
       lineHeight: 1.1,
-      minHeight: 56
+      minHeight: sc3(48)
     }
   }, value || "—"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textLight,
-      fontSize: 11,
+      fontSize: sc3(11),
       marginTop: 2
     }
   }, min, "\u301C", max, hint && /*#__PURE__*/React.createElement("span", {
@@ -280,7 +286,7 @@ function NumPad(_ref) {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(3,1fr)",
-      gap: 8
+      gap: sc3(7)
     }
   }, keys.map(function (k) {
     var isConfirm = k === "✓",
@@ -295,8 +301,8 @@ function NumPad(_ref) {
         background: isConfirm ? C.primaryDk : isBack ? C.bgSub : C.card,
         border: "1.5px solid ".concat(isConfirm ? C.primaryDk : C.border),
         borderRadius: 12,
-        padding: "11px 0",
-        fontSize: isConfirm || isBack ? 19 : 22,
+        padding: sc3(9) + "px 0",
+        fontSize: isConfirm || isBack ? sc3(18) : sc3(20),
         fontWeight: 700,
         color: isConfirm ? "#fff" : isBack ? C.textMid : C.textDark,
         cursor: "pointer",
@@ -324,12 +330,17 @@ function NumField(_ref2) {
     unit = _ref2$unit === void 0 ? "mmHg" : _ref2$unit,
     _ref2$large = _ref2.large,
     large = _ref2$large === void 0 ? false : _ref2$large,
+    _ref2$scale = _ref2.scale,
+    scale = _ref2$scale === void 0 ? 1 : _ref2$scale,
     _ref2$isActive = _ref2.isActive,
     isActive = _ref2$isActive === void 0 ? false : _ref2$isActive,
     onActivate = _ref2.onActivate,
     onNext = _ref2.onNext,
     hint = _ref2.hint;
   var isEmpty = !value;
+  var sc2 = function sc2(px) {
+    return Math.round(px * scale * 10) / 10;
+  };
   var handleClick = function handleClick() {
     if (onActivate) onActivate();
   };
@@ -344,7 +355,7 @@ function NumField(_ref2) {
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.textLight,
-      fontSize: 11,
+      fontSize: sc2(11),
       fontWeight: 600
     }
   }, label), /*#__PURE__*/React.createElement("div", {
@@ -355,7 +366,7 @@ function NumField(_ref2) {
       background: isActive ? C.bg === "f0f6ff" ? "#e4f0ff" : "#fff0f6" : C.card,
       border: "2px solid ".concat(isActive ? C.primary : isEmpty ? C.border : C.primaryDk),
       borderRadius: 14,
-      padding: large ? "10px 4px" : "8px 4px",
+      padding: (large ? sc2(10) : sc2(8)) + "px 4px",
       textAlign: "center",
       cursor: "pointer",
       transition: "all 0.15s",
@@ -363,14 +374,14 @@ function NumField(_ref2) {
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: large ? 46 : 30,
+      fontSize: large ? sc2(46) : sc2(30),
       fontWeight: 900,
       color: isEmpty ? C.textLight : C.primaryDk,
       lineHeight: 1
     }
   }, isEmpty ? placeholder : value), unit && /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10,
+      fontSize: sc2(10),
       color: C.textLight,
       marginTop: 3
     }
@@ -382,7 +393,8 @@ function NumField(_ref2) {
     label: label,
     max: max,
     min: min,
-    hint: hint
+    hint: hint,
+    scale: scale
   }));
 }
 
@@ -782,6 +794,27 @@ function BPTracker() {
     _useStateNP2 = _slicedToArray(_useStateNP, 2),
     numpadOpen = _useStateNP2[0],
     setNumpadOpen = _useStateNP2[1];
+  var _useStateVH = useState(function () {
+      return typeof window !== "undefined" ? window.innerHeight : 700;
+    }),
+    _useStateVH2 = _slicedToArray(_useStateVH, 2),
+    viewportH = _useStateVH2[0],
+    setViewportH = _useStateVH2[1];
+  useEffect(function () {
+    var update = function update() {
+      var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      setViewportH(h);
+    };
+    update();
+    window.addEventListener("resize", update);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return function () {
+      window.removeEventListener("resize", update);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
 
   // テーマをグローバルに反映し、強制再レンダリング
   var _useState13 = useState("pink"),
@@ -870,7 +903,7 @@ function BPTracker() {
     key: themeKey,
     style: {
       minHeight: "100vh",
-      height: "100dvh",
+      height: viewportH ? viewportH + "px" : "100dvh",
       background: isEvening ? THEME_BLUE.bg : THEME_PINK.bg,
       fontFamily: "'Noto Sans JP','Hiragino Sans',sans-serif",
       maxWidth: 540,
@@ -919,7 +952,8 @@ function BPTracker() {
     timeOfDay: timeOfDay,
     onTimeChange: setTimeOfDay,
     records: records,
-    onNumpadChange: setNumpadOpen
+    onNumpadChange: setNumpadOpen,
+    viewportH: viewportH
   }), tab === "calendar" && /*#__PURE__*/React.createElement(CalendarTab, {
     records: records,
     onAdd: addRecord,
@@ -1099,8 +1133,15 @@ function RecordTab(_ref7) {
     selectedDate = _ref7.selectedDate,
     onClearDate = _ref7.onClearDate,
     onNumpadChange = _ref7.onNumpadChange,
+    _ref7$viewportH = _ref7.viewportH,
+    viewportH = _ref7$viewportH === void 0 ? 700 : _ref7$viewportH,
     _ref7$records = _ref7.records,
     records = _ref7$records === void 0 ? [] : _ref7$records;
+  // 画面高さに応じた自動スケール係数(基準700pxを1.0とし、0.78〜1.18の範囲で調整)
+  var scale = Math.max(0.55, Math.min(1.18, viewportH / 700));
+  var sc = function sc(px) {
+    return Math.round(px * scale * 10) / 10;
+  };
   var _useState15 = useState(""),
     _useState16 = _slicedToArray(_useState15, 2),
     sys = _useState16[0],
@@ -1235,7 +1276,9 @@ function RecordTab(_ref7) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: 7
+      gap: sc(7),
+      flex: 1,
+      minHeight: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1248,7 +1291,7 @@ function RecordTab(_ref7) {
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textDark,
-      fontSize: 14,
+      fontSize: sc(14),
       fontWeight: 500
     }
   }, dateStr), selectedDate && /*#__PURE__*/React.createElement("button", {
@@ -1282,7 +1325,7 @@ function RecordTab(_ref7) {
         background: time === o.key ? o.key === "evening" ? THEME_BLUE.primary : THEME_PINK.primary : C.card,
         border: "1.5px solid ".concat(time === o.key ? o.key === "evening" ? THEME_BLUE.primaryDk : THEME_PINK.primaryDk : C.border),
         borderRadius: 12,
-        padding: "6px 0",
+        padding: sc(6) + "px 0",
         cursor: "pointer",
         display: "flex",
         flexDirection: "row",
@@ -1294,11 +1337,11 @@ function RecordTab(_ref7) {
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 15
+        fontSize: sc(15)
       }
     }, o.icon), /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 12,
+        fontSize: sc(12),
         fontWeight: 700,
         color: time === o.key ? "#fff" : C.textMid
       }
@@ -1330,7 +1373,7 @@ function RecordTab(_ref7) {
     style: {
       background: C.card,
       borderRadius: 16,
-      padding: "10px 12px",
+      padding: sc(10) + "px " + sc(12) + "px",
       border: "1.5px solid ".concat(C.border),
       boxShadow: "0 2px 12px ".concat(_theme.cardShadow),
       flexShrink: 0
@@ -1338,16 +1381,16 @@ function RecordTab(_ref7) {
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textLight,
-      fontSize: 12,
+      fontSize: sc(12),
       fontWeight: 700,
-      marginBottom: 6
+      marginBottom: sc(6)
     }
   }, "\uD83E\uDE78 \u8840\u5727\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "flex-end",
       gap: 8,
-      marginBottom: 8
+      marginBottom: sc(8)
     }
   }, /*#__PURE__*/React.createElement(NumField, {
     label: "\u53CE\u7E2E\u671F\uFF08\u4E0A\uFF09",
@@ -1357,6 +1400,7 @@ function RecordTab(_ref7) {
     max: 250,
     min: 50,
     large: true,
+    scale: scale,
     isActive: activeField === "sys",
     onActivate: function onActivate() {
       return setActiveField(activeField === "sys" ? null : "sys");
@@ -1368,9 +1412,9 @@ function RecordTab(_ref7) {
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.primary,
-      fontSize: 30,
+      fontSize: sc(30),
       fontWeight: 300,
-      paddingBottom: 10,
+      paddingBottom: sc(10),
       flexShrink: 0
     }
   }, "/"), /*#__PURE__*/React.createElement(NumField, {
@@ -1381,6 +1425,7 @@ function RecordTab(_ref7) {
     max: 200,
     min: 30,
     large: true,
+    scale: scale,
     isActive: activeField === "dia",
     onActivate: function onActivate() {
       return setActiveField(activeField === "dia" ? null : "dia");
@@ -1391,7 +1436,7 @@ function RecordTab(_ref7) {
     hint: "\u2192 \u8108\u62CD\u3078"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 110,
+      width: sc(110),
       flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement(NumField, {
@@ -1402,6 +1447,7 @@ function RecordTab(_ref7) {
     max: 200,
     min: 30,
     unit: "\u56DE/\u5206",
+    scale: scale,
     isActive: activeField === "pulse",
     onActivate: function onActivate() {
       return setActiveField(activeField === "pulse" ? null : "pulse");
@@ -1433,7 +1479,7 @@ function RecordTab(_ref7) {
   }, "\u76EE\u6A19: ", settings.systolicGoal, "/", settings.diastolicGoal, "\u3000 \u8B66\u544A: ", settings.systolicWarning, "/", settings.diastolicWarning, " mmHg")), !activeField && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8,
+      gap: 6,
       flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -1441,35 +1487,33 @@ function RecordTab(_ref7) {
       flex: 1,
       minWidth: 0,
       display: "flex",
+      flexDirection: "column",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: 4,
+      justifyContent: "center",
+      gap: sc(3),
       background: C.card,
       borderRadius: 12,
-      padding: "8px 8px",
+      padding: sc(6) + "px 4px",
       border: "1.5px solid ".concat(C.border)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 4,
-      minWidth: 0,
-      overflow: "hidden"
+      gap: 3,
+      minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 15,
+      fontSize: sc(14),
       flexShrink: 0
     }
   }, "\uD83C\uDF3C"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.textDark,
-      fontSize: 11,
+      fontSize: sc(11),
       fontWeight: 500,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
+      whiteSpace: "nowrap"
     }
   }, "\u751F\u7406\u4E2D")), /*#__PURE__*/React.createElement(ToggleSwitch, {
     on: mens,
@@ -1480,35 +1524,33 @@ function RecordTab(_ref7) {
       flex: 1,
       minWidth: 0,
       display: "flex",
+      flexDirection: "column",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: 4,
+      justifyContent: "center",
+      gap: sc(3),
       background: C.card,
       borderRadius: 12,
-      padding: "8px 8px",
+      padding: sc(6) + "px 4px",
       border: "1.5px solid ".concat(C.border)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 4,
-      minWidth: 0,
-      overflow: "hidden"
+      gap: 3,
+      minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 15,
+      fontSize: sc(14),
       flexShrink: 0
     }
   }, "\uD83C\uDFE5"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.textDark,
-      fontSize: 11,
+      fontSize: sc(11),
       fontWeight: 500,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
+      whiteSpace: "nowrap"
     }
   }, "\u901A\u9662\u3057\u305F")), /*#__PURE__*/React.createElement(ToggleSwitch, {
     on: isVisit,
@@ -1519,57 +1561,58 @@ function RecordTab(_ref7) {
       flex: 1,
       minWidth: 0,
       display: "flex",
+      flexDirection: "column",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: 4,
+      justifyContent: "center",
+      gap: sc(3),
       background: C.card,
       borderRadius: 12,
-      padding: "8px 8px",
+      padding: sc(6) + "px 4px",
       border: "1.5px solid ".concat(C.border)
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 4,
-      minWidth: 0,
-      overflow: "hidden"
+      gap: 3,
+      minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 15,
+      fontSize: sc(14),
       flexShrink: 0
     }
   }, "\uD83D\uDC8A"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.textDark,
-      fontSize: 11,
+      fontSize: sc(11),
       fontWeight: 500,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
+      whiteSpace: "nowrap"
     }
   }, "\u30C0\u30D6\u30EB\u9332")), /*#__PURE__*/React.createElement(ToggleSwitch, {
     on: doubleTab,
     onChange: setDoubleTab,
     activeColor: "#e67e22"
-  }))), !activeField && /*#__PURE__*/React.createElement("div", {
+  }))), !activeField && viewportH >= 480 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       borderRadius: 16,
-      padding: "8px 12px",
+      padding: sc(8) + "px " + sc(12) + "px",
       border: "1.5px solid ".concat(C.border),
       boxShadow: "0 2px 12px ".concat(_theme.cardShadow),
-      flexShrink: 0,
+      flex: "1 1 auto",
+      minHeight: sc(56),
+      maxHeight: Math.max(90, Math.min(280, viewportH * 0.28)),
       display: "flex",
       flexDirection: "column"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.textLight,
-      fontSize: 11,
+      fontSize: sc(11),
       fontWeight: 700,
-      marginBottom: 4
+      marginBottom: sc(4),
+      flexShrink: 0
     }
   }, "\uD83D\uDCDD \u30E1\u30E2\uFF08\u4F53\u8ABF\u30FB\u670D\u85AC\u306A\u3069\uFF09"), /*#__PURE__*/React.createElement("textarea", {
     value: memo,
@@ -1577,16 +1620,17 @@ function RecordTab(_ref7) {
       return setMemo(e.target.value);
     },
     placeholder: "\u4F8B: \u982D\u75DB\u3042\u308A / \u964D\u5727\u5264\u670D\u7528 / \u904B\u52D5\u5F8C",
-    rows: 2,
     style: {
       width: "100%",
+      flex: 1,
+      minHeight: 0,
       boxSizing: "border-box",
       background: C.bg,
       color: C.textDark,
       border: "1.5px solid ".concat(C.border),
       borderRadius: 10,
-      padding: "8px 10px",
-      fontSize: 13,
+      padding: sc(8) + "px " + sc(10) + "px",
+      fontSize: sc(13),
       fontFamily: "inherit",
       resize: "none",
       outline: "none"
@@ -1608,7 +1652,7 @@ function RecordTab(_ref7) {
       background: saved ? "#b8e4b8" : "#f4a0bc",
       border: "none",
       borderRadius: 16,
-      padding: "12px 0",
+      padding: sc(12) + "px 0",
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
@@ -1623,12 +1667,12 @@ function RecordTab(_ref7) {
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 20
+      fontSize: sc(20)
     }
   }, saved ? "✅" : "💾"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#fff",
-      fontSize: 16,
+      fontSize: sc(16),
       fontWeight: 500
     }
   }, saved ? "保存しました！" : "保存する")));
