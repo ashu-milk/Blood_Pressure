@@ -132,8 +132,18 @@ function persistRecords(recs) {
   _save("bp_records", JSON.stringify(recs));
 }
 function loadSettings() {
-  try { var v = _load("bp_settings"); return v ? Object.assign({}, DEFAULT_SETTINGS, JSON.parse(v)) : DEFAULT_SETTINGS; }
-  catch (_unused2) { return DEFAULT_SETTINGS; }
+  try {
+    var v = _load("bp_settings");
+    var raw = v ? JSON.parse(v) : {};
+    var merged = Object.assign({}, DEFAULT_SETTINGS, raw);
+    // 旧バージョン（処方週数）からの移行：保存データに prescriptionDays が無く、旧 prescriptionWeeks があれば日数に変換
+    if (raw.prescriptionDays == null && raw.prescriptionWeeks != null) {
+      merged.prescriptionDays = (parseInt(raw.prescriptionWeeks) || 4) * 7;
+    }
+    delete merged.prescriptionWeeks;
+    return merged;
+  }
+  catch (_unused2) { return Object.assign({}, DEFAULT_SETTINGS); }
 }
 function persistSettings(s) {
   _save("bp_settings", JSON.stringify(s));
@@ -145,10 +155,46 @@ var DEFAULT_SETTINGS = {
   diastolicWarning: 90,
   userName: "",
   visitDate: "",
-  prescriptionWeeks: 4
+  prescriptionDays: 28,
+  rxHistory: {}
 };
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+// 旧形式（文字列のみ）の処方薬データを新形式（名称・効能・用法のオブジェクト）に変換する
+function normalizeRx(item) {
+  if (item && typeof item === "object") {
+    return { name: item.name || "", effect: item.effect || "", dosage: item.dosage || "" };
+  }
+  return { name: item || "", effect: "", dosage: "" };
+}
+function normalizeRxList(list) {
+  return (list || []).map(normalizeRx);
+}
+// 処方薬の入力履歴（名称→効能・用法の候補リスト）に新しいエントリを追記する
+function addToRxHistory(rxHistory, rx) {
+  var hist = Object.assign({}, rxHistory || {});
+  var name = (rx.name || "").trim();
+  if (!name) return hist;
+  var entry = hist[name] ? { effects: hist[name].effects.slice(), dosages: hist[name].dosages.slice() } : { effects: [], dosages: [] };
+  var effect = (rx.effect || "").trim();
+  var dosage = (rx.dosage || "").trim();
+  if (effect && entry.effects.indexOf(effect) === -1) entry.effects.unshift(effect);
+  if (dosage && entry.dosages.indexOf(dosage) === -1) entry.dosages.unshift(dosage);
+  entry.effects = entry.effects.slice(0, 10);
+  entry.dosages = entry.dosages.slice(0, 10);
+  hist[name] = entry;
+  return hist;
+}
+// 処方薬リスト全体を履歴にまとめて反映する
+function mergeRxListIntoHistory(rxHistory, list) {
+  var hist = rxHistory || {};
+  (list || []).forEach(function (rx) { hist = addToRxHistory(hist, rx); });
+  return hist;
+}
+// 入力履歴から名称候補（全名称）を取得する
+function getRxNameSuggestions(rxHistory) {
+  return Object.keys(rxHistory || {});
 }
 // id が無い／異なる端末で生成された記録でも重複を検出するための指紋（内容ベース）
 function recordFingerprint(r) {
@@ -914,6 +960,10 @@ function BPTracker() {
     label: "カレンダー",
     icon: "📅"
   }, {
+    key: "visit",
+    label: "通院",
+    icon: "🏥"
+  }, {
     key: "graph",
     label: "グラフ",
     icon: "📈"
@@ -985,6 +1035,11 @@ function BPTracker() {
     records: records,
     onAdd: addRecord,
     onDelete: removeRecord,
+    onUpdate: updateRecord,
+    settings: settings,
+    onSaveSettings: saveSettings
+  }), tab === "visit" && /*#__PURE__*/React.createElement(VisitTab, {
+    records: records,
     onUpdate: updateRecord,
     settings: settings,
     onSaveSettings: saveSettings
@@ -1724,7 +1779,6 @@ function CalendarTab(_ref9) {
   var records=_ref9.records, onAdd=_ref9.onAdd, onDelete=_ref9.onDelete,
       onUpdate=_ref9.onUpdate, settings=_ref9.settings, onSaveSettings=_ref9.onSaveSettings;
   var today=new Date();
-  var _a1=useState("calendar"),_a2=_slicedToArray(_a1,2); var subTab=_a2[0],setSubTab=_a2[1];
   var _a3=useState(today.getFullYear()),_a4=_slicedToArray(_a3,2); var viewYear=_a4[0],setViewYear=_a4[1];
   var _a5=useState(today.getMonth()),_a6=_slicedToArray(_a5,2); var viewMonth=_a6[0],setViewMonth=_a6[1];
   var _a7=useState(null),_a8=_slicedToArray(_a7,2); var selDay=_a7[0],setSelDay=_a8[1];
@@ -1733,29 +1787,12 @@ function CalendarTab(_ref9) {
   var _a13=useState(null),_a14=_slicedToArray(_a13,2); var delConf=_a13[0],setDelConf=_a14[1];
   var _a15=useState("morning"),_a16=_slicedToArray(_a15,2); var tod=_a15[0],setTod=_a16[1];
   var _a17=useState(false),_a18=_slicedToArray(_a17,2); var showList=_a17[0],setShowList=_a18[1];
-  // 通院管理フォーム state
-  var _a19=useState(settings.visitDate||""),_a20=_slicedToArray(_a19,2); var fVisitDate=_a19[0],setFVisitDate=_a20[1];
-  var _a21=useState(settings.prescriptionWeeks||4),_a22=_slicedToArray(_a21,2); var fWeeks=_a21[0],setFWeeks=_a22[1];
-  var _a23=useState(false),_a24=_slicedToArray(_a23,2); var visitSaved=_a23[0],setVisitSaved=_a24[1];
-  var _a25=useState(null),_a26=_slicedToArray(_a25,2); var visitDelConf=_a25[0],setVisitDelConf=_a26[1];
-  var _a27=useState(null),_a28=_slicedToArray(_a27,2); var visitEditing=_a27[0],setVisitEditing=_a28[1];
 
-  // settingsが変わったらフォームに反映
-  React.useEffect(function(){
-    setFVisitDate(settings.visitDate||"");
-    setFWeeks(settings.prescriptionWeeks||4);
-  }, [settings.visitDate, settings.prescriptionWeeks]);
-
-  var saveVisitSettings=function(){
-    if(onSaveSettings) onSaveSettings(_objectSpread(_objectSpread({},settings),{},{visitDate:fVisitDate,prescriptionWeeks:parseInt(fWeeks)||4}));
-    setVisitSaved(true); setTimeout(function(){return setVisitSaved(false);},2000);
-  };
-
-  // 通院日計算
+  // 通院日計算（カレンダー上の次回通院日ハイライトに使用）
   var visitDateObj=settings.visitDate?new Date(settings.visitDate):null;
   var nextVisitObj=null;
-  if(visitDateObj&&settings.prescriptionWeeks)
-    nextVisitObj=new Date(visitDateObj.getTime()+(parseInt(settings.prescriptionWeeks)||4)*7*86400000);
+  if(visitDateObj&&settings.prescriptionDays)
+    nextVisitObj=new Date(visitDateObj.getTime()+(parseInt(settings.prescriptionDays)||28)*86400000);
   var isNVD=function(yr,mo,d){
     if(!nextVisitObj) return false;
     return nextVisitObj.getFullYear()===yr&&nextVisitObj.getMonth()===mo&&nextVisitObj.getDate()===d;
@@ -1766,10 +1803,6 @@ function CalendarTab(_ref9) {
     var vm=new Date(nextVisitObj.getFullYear(),nextVisitObj.getMonth(),nextVisitObj.getDate());
     daysLeft=Math.round((vm-tm)/86400000);
   }
-
-  // 実通院記録 (isVisit=true の最新日)
-  var visitRecs = records.filter(function(r){return r.isVisit;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
-  var lastActualVisit = visitRecs.length ? new Date(visitRecs[0].date) : null;
 
   // 記録マップ
   var recMap={};
@@ -1852,307 +1885,8 @@ function CalendarTab(_ref9) {
       }));
   };
 
-  // ── 通院管理タブ ────────────────────────────────────────────────
-  var renderVisitManager=function(){
-    // 通院記録の履歴（isVisit=trueの記録を日付新しい順）
-    var vhist=_toConsumableArray(visitRecs);
-    // 次回通院プレビュー
-    var previewNext=fVisitDate&&parseInt(fWeeks)>0?(function(){
-      var vd=new Date(fVisitDate);
-      return new Date(vd.getTime()+(parseInt(fWeeks)||4)*7*86400000);
-    })():null;
-
-    return /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:14}},
-
-      // 次回通院バナー
-      nextVisitObj&&/*#__PURE__*/React.createElement("div",{style:{
-        display:"flex",alignItems:"center",gap:12,
-        background:daysLeft!==null&&daysLeft<=3?"#fdf4ff":"#f5f0ff",
-        border:"1.5px solid "+(daysLeft!==null&&daysLeft<=3?"#c084fc":"#a78bfa"),
-        borderRadius:14,padding:"14px 16px",boxShadow:"0 2px 10px rgba(124,58,237,0.10)"}},
-        /*#__PURE__*/React.createElement("span",{style:{fontSize:28,flexShrink:0}},"🏥"),
-        /*#__PURE__*/React.createElement("div",{style:{flex:1,minWidth:0}},
-          /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700,marginBottom:2}},"次回通院日"),
-          /*#__PURE__*/React.createElement("div",{style:{color:"#3b0764",fontSize:17,fontWeight:800}},
-            nextVisitObj.getFullYear()+"年"+(nextVisitObj.getMonth()+1)+"月"+nextVisitObj.getDate()+"日",
-            /*#__PURE__*/React.createElement("span",{style:{fontSize:13,fontWeight:600,color:"#7c3aed",marginLeft:8}},"("+WD[nextVisitObj.getDay()]+")")),
-          /*#__PURE__*/React.createElement("div",{style:{color:"#7c3aed",fontSize:11,marginTop:3}},
-            "前回通院: "+settings.visitDate+"　処方: "+(settings.prescriptionWeeks||4)+"週分")
-        ),
-        daysLeft!==null&&/*#__PURE__*/React.createElement("div",{style:{
-          background:daysLeft<=0?"#e85050":daysLeft<=3?"#9333ea":"#7c3aed",
-          color:"#fff",borderRadius:12,padding:"8px 12px",textAlign:"center",flexShrink:0,
-          boxShadow:"0 2px 8px rgba(124,58,237,0.3)",minWidth:56}},
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:22,fontWeight:900,lineHeight:1}},daysLeft<=0?"本日":String(daysLeft)),
-          /*#__PURE__*/React.createElement("div",{style:{fontSize:9,fontWeight:700,marginTop:2}},daysLeft<=0?"":"日後"))
-      ),
-
-      // 設定フォーム
-      /*#__PURE__*/React.createElement("div",{style:{background:C.card,borderRadius:16,border:"1.5px solid "+C.border,padding:16,boxShadow:"0 2px 10px "+_theme.cardShadow}},
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:15,fontWeight:800,marginBottom:4}},"⚙️ 処方・通院設定"),
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:12,marginBottom:12}},"設定を変更するとカレンダーの次回通院日が更新されます"),
-
-        // 前回通院日
-        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",padding:"10px 0",borderTop:"1px solid "+C.border}},
-          /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-            /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:14,fontWeight:700}},"前回通院日"),
-            /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},
-              lastActualVisit?"最終記録: "+lastActualVisit.getFullYear()+"年"+(lastActualVisit.getMonth()+1)+"月"+lastActualVisit.getDate()+"日":"最後に診察を受けた日付")),
-          /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}},
-            /*#__PURE__*/React.createElement("input",{type:"date",value:fVisitDate,onChange:function(e){return setFVisitDate(e.target.value);},style:{background:C.bg,color:C.textDark,border:"1.5px solid "+C.border,borderRadius:10,padding:"8px 10px",fontSize:14,fontFamily:"inherit",outline:"none",cursor:"pointer"}}),
-            lastActualVisit&&/*#__PURE__*/React.createElement("button",{
-              onClick:function(){
-                var d=lastActualVisit;
-                setFVisitDate(d.getFullYear()+"-"+(String(d.getMonth()+1).padStart(2,"0"))+"-"+(String(d.getDate()).padStart(2,"0")));
-              },
-              style:{fontSize:11,color:"#7c3aed",background:"#f5f0ff",border:"1px solid #a78bfa",borderRadius:7,padding:"3px 8px",cursor:"pointer"}
-            },"📋 最終通院日を使用")
-          )
-        ),
-
-        // 処方週数
-        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",padding:"10px 0",borderTop:"1px solid "+C.border}},
-          /*#__PURE__*/React.createElement("div",{style:{flex:1}},
-            /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:14,fontWeight:700}},"処方週数"),
-            /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},"薬を何週間分もらったか")),
-          /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:4}},
-            [1,2,3,4].map(function(w){
-              var act=parseInt(fWeeks)===w;
-              return /*#__PURE__*/React.createElement("button",{key:w,onClick:function(){return setFWeeks(w);},style:{width:38,height:36,background:act?"#7c3aed":C.bgSub,border:"1.5px solid "+(act?"#7c3aed":C.border),borderRadius:9,cursor:"pointer",color:act?"#fff":C.textMid,fontSize:13,fontWeight:act?800:500,transition:"all 0.15s"}},w);
-            }),
-            /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,margin:"0 4px"}},"週 /"),
-            /*#__PURE__*/React.createElement("input",{type:"number",min:"1",max:"52",value:parseInt(fWeeks)<=4?"":fWeeks,
-              onChange:function(e){if(e.target.value) setFWeeks(parseInt(e.target.value));},
-              placeholder:"その他",
-              style:{width:52,background:C.bg,color:C.textDark,border:"1.5px solid "+(parseInt(fWeeks)>4?"#7c3aed":C.border),borderRadius:9,padding:"6px 6px",fontSize:13,fontFamily:"inherit",outline:"none",textAlign:"center"}}),
-            /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,marginLeft:4}},"週"))
-        ),
-
-        // プレビュー
-        previewNext&&/*#__PURE__*/React.createElement("div",{style:{background:"#f5f0ff",border:"1.5px solid #a78bfa",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,marginTop:8}},
-          /*#__PURE__*/React.createElement("span",{style:{fontSize:18}},"🗓️"),
-          /*#__PURE__*/React.createElement("div",null,
-            /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:11,fontWeight:700}},"次回通院予定（プレビュー）"),
-            /*#__PURE__*/React.createElement("div",{style:{color:"#3b0764",fontSize:15,fontWeight:800}},
-              previewNext.getFullYear()+"年"+(previewNext.getMonth()+1)+"月"+previewNext.getDate()+"日（"+WD[previewNext.getDay()]+"）"))),
-
-        // 保存ボタン
-        /*#__PURE__*/React.createElement("button",{onClick:saveVisitSettings,style:{
-          width:"100%",marginTop:12,background:visitSaved?"#b8e4b8":"#7c3aed",border:"none",
-          borderRadius:12,padding:"12px 0",cursor:"pointer",color:"#fff",fontSize:14,fontWeight:700,
-          boxShadow:visitSaved?"0 4px 14px rgba(184,228,184,0.5)":"0 4px 14px rgba(124,58,237,0.3)",
-          transition:"all 0.3s",display:"flex",alignItems:"center",justifyContent:"center",gap:8}},
-          /*#__PURE__*/React.createElement("span",{style:{fontSize:18}},visitSaved?"✅":"💾"),
-          /*#__PURE__*/React.createElement("span",null,visitSaved?"保存しました！":"通院設定を保存"))
-      ),
-
-      // 通院記録の履歴
-      vhist.length>0&&/*#__PURE__*/React.createElement("div",{style:{background:C.card,borderRadius:16,border:"1.5px solid "+C.border,padding:16,boxShadow:"0 2px 10px "+_theme.cardShadow}},
-        /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:15,fontWeight:800,marginBottom:10}},"📋 通院記録の履歴"),
-        /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-          vhist.map(function(r){
-            var d=new Date(r.date);
-            var isEditingThis = visitEditing && visitEditing.id===r.id;
-            var isDelConfThis = visitDelConf===r.id;
-            // 期間計算（この通院日〜次回通院日）
-            var vIdx = vhist.indexOf(r);
-            var pStart = new Date(r.date); pStart.setHours(0,0,0,0);
-            var pEnd = vIdx===0
-              ? (nextVisitObj ? new Date(nextVisitObj) : null)
-              : (function(){ var e=new Date(vhist[vIdx-1].date); e.setHours(23,59,59,999); return e; })();
-            var pRecs = records.filter(function(rec){
-              if (rec.mensOnly||!rec.systolic) return false;
-              var rd=new Date(rec.date);
-              return pEnd ? (rd>=pStart&&rd<=pEnd) : rd>=pStart;
-            });
-            var pMaxSys = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.systolic;})) : null;
-            var pMaxDia = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.diastolic;})) : null;
-            // 編集中のisVisit状態
-            return /*#__PURE__*/React.createElement("div",{key:r.id,style:{
-              background:isEditingThis?"#f5f0ff":C.bgSub,
-              borderRadius:12,border:"1.5px solid "+(isEditingThis?"#a78bfa":C.border),
-              padding:"10px 12px",transition:"all 0.2s"}},
-              // 通常表示行
-              /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
-                // 日付行＋ボタン（横並び）
-                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
-                  /*#__PURE__*/React.createElement("span",{style:{fontSize:15}},"🏥"),
-                  /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},
-                    d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日 ("+WD[d.getDay()]+")"),
-                  !isDelConfThis&&!isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4,flexShrink:0}},
-                    /*#__PURE__*/React.createElement("button",{
-                      onClick:function(){setVisitEditing(r);setVisitDelConf(null);},
-                      style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1}
-                    },"✏️"),
-                    /*#__PURE__*/React.createElement("button",{
-                      onClick:function(){setVisitDelConf(r.id);setVisitEditing(null);},
-                      style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1,opacity:0.7}
-                    },"🗑️")
-                  )
-                ),
-                // 最高値・件数バッジ
-                pRecs.length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:5,flexWrap:"wrap",paddingLeft:23}},
-                  /*#__PURE__*/React.createElement("div",{style:{background:"#fff0f5",border:"1px solid #f9c8da",borderRadius:6,padding:"2px 8px",fontSize:10,display:"flex",alignItems:"center",gap:3}},
-                    /*#__PURE__*/React.createElement("span",{style:{color:"#e85050"}},"🔴"),
-                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最高 "),
-                    /*#__PURE__*/React.createElement("span",{style:{color:"#c03030",fontWeight:800}},pMaxSys),
-                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"/"),
-                    /*#__PURE__*/React.createElement("span",{style:{color:"#1a7a1a",fontWeight:800}},pMaxDia),
-                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}}," mmHg")),
-                  /*#__PURE__*/React.createElement("div",{style:{background:"#f0f0f0",border:"1px solid #ddd",borderRadius:6,padding:"2px 8px",fontSize:10,color:C.textLight}},
-                    pRecs.length+"件"+(pEnd?" / "+(pStart.getMonth()+1)+"/"+pStart.getDate()+"〜"+(pEnd.getMonth()+1)+"/"+pEnd.getDate():"〜現在"))
-                ),
-                // メモ表示
-                r.memo&&/*#__PURE__*/React.createElement("div",{style:{paddingLeft:23,color:C.textMid,fontSize:11,marginTop:2}},
-                  "📝 "+r.memo)
-              ),
-              // 削除確認
-              isDelConfThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginTop:8}},
-                /*#__PURE__*/React.createElement("div",{style:{flex:1,color:"#c03030",fontSize:12,fontWeight:600,alignSelf:"center"}},"通院フラグを外しますか？（血圧記録は残ります）"),
-                /*#__PURE__*/React.createElement("button",{
-                  onClick:function(){
-                    // 記録自体は残し、通院フラグのみOFFにする
-                    onUpdate(_objectSpread(_objectSpread({},r),{},{isVisit:false}));
-                    setVisitDelConf(null);
-                  },
-                  style:{background:"#fff1f1",border:"1.5px solid #f87171",borderRadius:8,padding:"5px 12px",cursor:"pointer",color:"#e06060",fontSize:12,fontWeight:700}
-                },"通院フラグを外す"),
-                /*#__PURE__*/React.createElement("button",{
-                  onClick:function(){setVisitDelConf(null);},
-                  style:{background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:8,padding:"5px 10px",cursor:"pointer",color:C.textMid,fontSize:12}
-                },"キャンセル")
-              ),
-              // 編集フォーム（isVisitのON/OFFと、この日を設定）
-              isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{marginTop:10,borderTop:"1px solid #c4b5fd",paddingTop:10,display:"flex",flexDirection:"column",gap:10}},
-                /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700,marginBottom:2}},"✏️ 編集"),
-
-                // ── 通院フラグ ──────────────────────────────────
-                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#ede9fe",borderRadius:8}},
-                  /*#__PURE__*/React.createElement("span",{style:{fontSize:14}},"🏥"),
-                  /*#__PURE__*/React.createElement("span",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:500}},"通院フラグ"),
-                  /*#__PURE__*/React.createElement(ToggleSwitch,{on:visitEditing.isVisit||false,
-                    onChange:function(v){
-                      setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{isVisit:v}));
-                    },activeColor:"#7c3aed"})
-                ),
-
-                // ── 通院設定に反映チェック ─────────────────────
-                /*#__PURE__*/React.createElement("div",{style:{background:"#f5f0ff",border:"1.5px solid #a78bfa",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}},
-                  /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700}},"⚙️ 通院設定（処方・次回通院）に反映"),
-                  /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11}},"この通院日を「前回通院日」として設定し、次回通院日を再計算します"),
-
-                  // 前回通院日（この記録の日付で自動セット）
-                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
-                    /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},"前回通院日"),
-                    /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:13,fontWeight:700}},
-                      (new Date(visitEditing.date)).getFullYear()+"年"+
-                      ((new Date(visitEditing.date)).getMonth()+1)+"月"+
-                      (new Date(visitEditing.date)).getDate()+"日"
-                    )
-                  ),
-
-                  // 処方週数
-                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
-                    /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},"処方週数"),
-                    /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:3}},
-                      [1,2,3,4].map(function(w){
-                        var act=(visitEditing._editWeeks||fWeeks||4)===w;
-                        return /*#__PURE__*/React.createElement("button",{key:w,
-                          onClick:function(){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editWeeks:w}));},
-                          style:{width:34,height:30,background:act?"#7c3aed":C.bgSub,
-                            border:"1.5px solid "+(act?"#7c3aed":C.border),borderRadius:7,
-                            cursor:"pointer",color:act?"#fff":C.textMid,fontSize:12,fontWeight:act?800:500,transition:"all 0.15s"}
-                        },w);
-                      }),
-                      /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,margin:"0 3px"}},"週 /"),
-                      /*#__PURE__*/React.createElement("input",{
-                        type:"number",min:"1",max:"52",
-                        value:(visitEditing._editWeeks||fWeeks||4)>4?(visitEditing._editWeeks||fWeeks):"",
-                        onChange:function(e){if(e.target.value) setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editWeeks:parseInt(e.target.value)}));},
-                        placeholder:"他",
-                        style:{width:46,background:C.bg,color:C.textDark,border:"1.5px solid "+((visitEditing._editWeeks||fWeeks||4)>4?"#7c3aed":C.border),
-                          borderRadius:7,padding:"4px 5px",fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"center"}
-                      }),
-                      /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,marginLeft:2}},"週")
-                    )
-                  ),
-
-                  // 次回通院プレビュー
-                  (function(){
-                    var w=visitEditing._editWeeks||fWeeks||4;
-                    var vd=new Date(visitEditing.date);
-                    var nv=new Date(vd.getTime()+w*7*86400000);
-                    var WDx=["日","月","火","水","木","金","土"];
-                    return /*#__PURE__*/React.createElement("div",{style:{background:"#ede9fe",borderRadius:8,padding:"6px 10px",fontSize:11,color:"#5b21b6",fontWeight:600}},
-                      "🗓️ 次回通院予定: "+nv.getFullYear()+"年"+(nv.getMonth()+1)+"月"+nv.getDate()+"日（"+WDx[nv.getDay()]+"）"
-                    );
-                  })()
-                ),
-
-                // ── メモ編集 ─────────────────────────────────
-                /*#__PURE__*/React.createElement("input",{
-                  type:"text",
-                  value:visitEditing.memo||"",
-                  onChange:function(e){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{memo:e.target.value}));},
-                  placeholder:"メモを編集",
-                  style:{width:"100%",boxSizing:"border-box",background:C.bg,color:C.textDark,
-                    border:"1.5px solid #a78bfa",borderRadius:8,padding:"7px 10px",fontSize:13,
-                    fontFamily:"inherit",outline:"none"}
-                }),
-
-                // ── 保存・キャンセル ──────────────────────────
-                /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8}},
-                  /*#__PURE__*/React.createElement("button",{
-                    onClick:function(){
-                      // 記録を更新
-                      onUpdate(visitEditing);
-                      // 通院設定（処方週数・前回通院日）を更新
-                      var w=visitEditing._editWeeks||fWeeks||4;
-                      var vd=new Date(visitEditing.date);
-                      var dateStr=vd.getFullYear()+"-"+String(vd.getMonth()+1).padStart(2,"0")+"-"+String(vd.getDate()).padStart(2,"0");
-                      saveVisitSettings._override={visitDate:dateStr,prescriptionWeeks:w};
-                      if(onSaveSettings) onSaveSettings(_objectSpread(_objectSpread({},settings),{},{visitDate:dateStr,prescriptionWeeks:w}));
-                      setFVisitDate(dateStr);
-                      setFWeeks(w);
-                      setVisitEditing(null);
-                    },
-                    style:{flex:2,background:"#7c3aed",border:"none",borderRadius:10,padding:"10px 0",
-                      cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700,
-                      boxShadow:"0 3px 10px rgba(124,58,237,0.3)"}
-                  },"💾 記録＋設定を保存"),
-                  /*#__PURE__*/React.createElement("button",{
-                    onClick:function(){setVisitEditing(null);},
-                    style:{flex:1,background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:10,
-                      padding:"10px 0",cursor:"pointer",color:C.textMid,fontSize:13}
-                  },"キャンセル")
-                )
-              )
-            );
-          }))
-      ),
-
-      vhist.length===0&&/*#__PURE__*/React.createElement("div",{style:{textAlign:"center",padding:"30px 0",color:C.textLight,fontSize:13}},
-        "記録タブで「通院した」をONにすると",/*#__PURE__*/React.createElement("br",null),"ここに通院履歴が表示されます")
-    );
-  };
 
   return /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:12}},
-
-    // ── サブタブ ────────────────────────────────────────────────────
-    /*#__PURE__*/React.createElement("div",{style:{display:"flex",background:C.card,borderRadius:12,padding:4,gap:4,border:"1.5px solid "+C.border}},
-      [["calendar","📅 カレンダー"],["visit","🏥 通院管理"]].map(function(tb){
-        var active=subTab===tb[0];
-        return /*#__PURE__*/React.createElement("button",{key:tb[0],onClick:function(){setSubTab(tb[0]);setSelDay(null);setShowList(false);},
-          style:{flex:1,background:active?(tb[0]==="visit"?"#7c3aed":C.primaryDk):"transparent",border:"none",
-            borderRadius:9,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,
-            color:active?"#fff":C.textMid,transition:"all 0.2s",
-            boxShadow:active?"0 2px 8px "+(tb[0]==="visit"?"rgba(124,58,237,0.3)":_theme.btnShadow):"none"}
-        },tb[1]);
-      })
-    ),
-
-    // ── カレンダーサブタブ ───────────────────────────────────────────
-    subTab==="calendar"&&/*#__PURE__*/React.createElement(React.Fragment,null,
 
       // 次回通院バナー（カレンダー内）
       nextVisitObj&&/*#__PURE__*/React.createElement("div",{style:{
@@ -2166,9 +1900,8 @@ function CalendarTab(_ref9) {
           /*#__PURE__*/React.createElement("div",{style:{color:"#3b0764",fontSize:14,fontWeight:800}},
             nextVisitObj.getFullYear()+"年"+(nextVisitObj.getMonth()+1)+"月"+nextVisitObj.getDate()+"日 ("+WD[nextVisitObj.getDay()]+")")),
         daysLeft!==null&&/*#__PURE__*/React.createElement("div",{
-          onClick:function(){setSubTab("visit");},
           style:{background:daysLeft<=0?"#e85050":daysLeft<=3?"#9333ea":"#7c3aed",color:"#fff",
-            borderRadius:10,padding:"5px 10px",textAlign:"center",flexShrink:0,cursor:"pointer",
+            borderRadius:10,padding:"5px 10px",textAlign:"center",flexShrink:0,
             boxShadow:"0 2px 6px rgba(124,58,237,0.25)"}},
           /*#__PURE__*/React.createElement("div",{style:{fontSize:18,fontWeight:900,lineHeight:1}},daysLeft<=0?"本日":String(daysLeft)),
           /*#__PURE__*/React.createElement("div",{style:{fontSize:9,fontWeight:700}},daysLeft<=0?"":"日後"))
@@ -2274,10 +2007,760 @@ function CalendarTab(_ref9) {
         dayRecs.length===0&&!showForm&&/*#__PURE__*/React.createElement("div",{style:{textAlign:"center",padding:"20px 0",color:C.textLight,fontSize:13}},"この日の記録はありません"),
         showForm&&/*#__PURE__*/React.createElement(InlineDayForm,{date:selDay,timeOfDay:tod,onTimeChange:setTod,settings:settings,onAdd:onAdd,onClose:function(){return setShowForm(false);}})
       )
+  );
+}
+// ─── 通院タブ（独立タブ）────────────────────────────────────────────
+function VisitTab(_ref10) {
+  var records=_ref10.records, onUpdate=_ref10.onUpdate, settings=_ref10.settings, onSaveSettings=_ref10.onSaveSettings;
+  var WD=["日","月","火","水","木","金","土"];
+  var _b0=useState("next"),_b0b=_slicedToArray(_b0,2); var subTab=_b0[0],setSubTab=_b0b[1];
+  // 通院管理フォーム state
+  var _b1=useState(settings.visitDate||""),_b2=_slicedToArray(_b1,2); var fVisitDate=_b1[0],setFVisitDate=_b2[1];
+  var _b3=useState(settings.prescriptionDays||28),_b4=_slicedToArray(_b3,2); var fDays=_b3[0],setFDays=_b4[1];
+  var _b5=useState(false),_b6=_slicedToArray(_b5,2); var visitSaved=_b5[0],setVisitSaved=_b6[1];
+  var _b7=useState(null),_b8=_slicedToArray(_b7,2); var visitDelConf=_b7[0],setVisitDelConf=_b8[1];
+  var _b9=useState(null),_b10=_slicedToArray(_b9,2); var visitEditing=_b9[0],setVisitEditing=_b10[1];
+  // 設定フォーム内・前回処方薬の編集用 state（最新通院記録のprescriptionsを編集する）
+  var _b11=useState(null),_b12=_slicedToArray(_b11,2); var rxEditing=_b11[0],setRxEditing=_b12[1];
+  var _b13=useState(""),_b14=_slicedToArray(_b13,2); var rxNewName=_b13[0],setRxNewName=_b14[1];
+  var _b15=useState(null),_b16=_slicedToArray(_b15,2); var rxEditIdx=_b15[0],setRxEditIdx=_b16[1];
+  var _b17=useState(""),_b18=_slicedToArray(_b17,2); var rxEditName=_b17[0],setRxEditName=_b18[1];
+  var _b19=useState(""),_b20=_slicedToArray(_b19,2); var rxNewEffect=_b19[0],setRxNewEffect=_b20[1];
+  var _b21=useState(""),_b22=_slicedToArray(_b21,2); var rxNewDosage=_b21[0],setRxNewDosage=_b22[1];
+  var _b23=useState(""),_b24=_slicedToArray(_b23,2); var rxEditEffect=_b23[0],setRxEditEffect=_b24[1];
+  var _b25=useState(""),_b26=_slicedToArray(_b25,2); var rxEditDosage=_b25[0],setRxEditDosage=_b26[1];
+  // 通院記録の履歴カード内・処方薬の追加・編集用 state
+  var _b27=useState(""),_b28=_slicedToArray(_b27,2); var hrxNewName=_b27[0],setHrxNewName=_b28[1];
+  var _b29=useState(""),_b30=_slicedToArray(_b29,2); var hrxNewEffect=_b29[0],setHrxNewEffect=_b30[1];
+  var _b31=useState(""),_b32=_slicedToArray(_b31,2); var hrxNewDosage=_b31[0],setHrxNewDosage=_b32[1];
+  var _b33=useState(null),_b34=_slicedToArray(_b33,2); var hrxEditIdx=_b33[0],setHrxEditIdx=_b34[1];
+  var _b35=useState(""),_b36=_slicedToArray(_b35,2); var hrxEditName=_b35[0],setHrxEditName=_b36[1];
+  var _b37=useState(""),_b38=_slicedToArray(_b37,2); var hrxEditEffect=_b37[0],setHrxEditEffect=_b38[1];
+  var _b39=useState(""),_b40=_slicedToArray(_b39,2); var hrxEditDosage=_b39[0],setHrxEditDosage=_b40[1];
+
+  // settingsが変わったらフォームに反映
+  React.useEffect(function(){
+    setFVisitDate(settings.visitDate||"");
+    setFDays(settings.prescriptionDays||28);
+  }, [settings.visitDate, settings.prescriptionDays]);
+  var saveVisitSettings=function(){
+    if(onSaveSettings) onSaveSettings(_objectSpread(_objectSpread({},settings),{},{visitDate:fVisitDate,prescriptionDays:parseInt(fDays)||28}));
+    setVisitSaved(true); setTimeout(function(){return setVisitSaved(false);},2000);
+  };
+
+  // 通院日計算
+  var visitDateObj=settings.visitDate?new Date(settings.visitDate):null;
+  var nextVisitObj=null;
+  if(visitDateObj&&settings.prescriptionDays)
+    nextVisitObj=new Date(visitDateObj.getTime()+(parseInt(settings.prescriptionDays)||28)*86400000);
+  var daysLeft=null;
+  if(nextVisitObj){
+    var today=new Date();
+    var tm=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+    var vm=new Date(nextVisitObj.getFullYear(),nextVisitObj.getMonth(),nextVisitObj.getDate());
+    daysLeft=Math.round((vm-tm)/86400000);
+  }
+
+  // 実通院記録 (isVisit=true の最新日。記録全体を保持して処方薬にもアクセスする)
+  var visitRecs = records.filter(function(r){return r.isVisit;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  var lastActualVisitRec = visitRecs.length ? visitRecs[0] : null;
+  var lastActualVisit = lastActualVisitRec ? new Date(lastActualVisitRec.date) : null;
+
+  // 通院記録の履歴（isVisit=trueの記録を日付新しい順）
+  var vhist=_toConsumableArray(visitRecs);
+  // 次回通院プレビュー
+  var previewNext=fVisitDate&&parseInt(fDays)>0?(function(){
+    var vd=new Date(fVisitDate);
+    return new Date(vd.getTime()+(parseInt(fDays)||28)*86400000);
+  })():null;
+
+  // 直近の通院記録が変わったら、処方薬の編集中バッファをリセットする
+  React.useEffect(function(){
+    setRxEditing(null);
+    setRxNewName(""); setRxNewEffect(""); setRxNewDosage("");
+    setRxEditIdx(null);
+    setRxEditName(""); setRxEditEffect(""); setRxEditDosage("");
+  }, [lastActualVisitRec&&lastActualVisitRec.id]);
+
+  // 編集中の通院カードが切り替わったら、履歴カード内の処方薬編集バッファをリセットする
+  React.useEffect(function(){
+    setHrxNewName(""); setHrxNewEffect(""); setHrxNewDosage("");
+    setHrxEditIdx(null);
+    setHrxEditName(""); setHrxEditEffect(""); setHrxEditDosage("");
+  }, [visitEditing&&visitEditing.id]);
+
+  return /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+
+    // ── サブタブ ────────────────────────────────────────────────────
+    /*#__PURE__*/React.createElement("div",{style:{display:"flex",background:C.card,borderRadius:12,padding:4,gap:4,border:"1.5px solid "+C.border}},
+      [["next","通院・処方の設定"],["history","📋 通院記録の履歴"]].map(function(tb){
+        var active=subTab===tb[0];
+        return /*#__PURE__*/React.createElement("button",{key:tb[0],onClick:function(){setSubTab(tb[0]);},
+          style:{flex:1,background:active?"#7c3aed":"transparent",border:"none",
+            borderRadius:9,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,
+            color:active?"#fff":C.textMid,transition:"all 0.2s",
+            boxShadow:active?"0 2px 8px rgba(124,58,237,0.3)":"none"}
+        },tb[1]);
+      })
     ),
 
-    // ── 通院管理サブタブ ─────────────────────────────────────────────
-    subTab==="visit"&&renderVisitManager()
+    // ── 通院・処方の設定ページ ───────────────────────────────────────
+    subTab==="next"&&/*#__PURE__*/React.createElement(React.Fragment,null,
+
+    // 設定フォーム
+    /*#__PURE__*/React.createElement("div",{style:{background:C.card,borderRadius:16,border:"1.5px solid "+C.border,padding:16,boxShadow:"0 2px 10px "+_theme.cardShadow}},
+      /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:15,fontWeight:800,marginBottom:4}},"通院・処方の設定"),
+      /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:12,marginBottom:12}},"設定を変更するとカレンダーの次回通院日が更新されます"),
+
+      // 通院日
+      /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",padding:"10px 0",borderTop:"1px solid "+C.border}},
+        /*#__PURE__*/React.createElement("div",{style:{flex:1}},
+          /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:14,fontWeight:700}},"通院日"),
+          /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},
+            lastActualVisit?"最終記録: "+lastActualVisit.getFullYear()+"年"+(lastActualVisit.getMonth()+1)+"月"+lastActualVisit.getDate()+"日":"最後に診察を受けた日付")),
+        /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}},
+          /*#__PURE__*/React.createElement("input",{type:"date",value:fVisitDate,onChange:function(e){return setFVisitDate(e.target.value);},style:{background:C.bg,color:C.textDark,border:"1.5px solid "+C.border,borderRadius:10,padding:"8px 10px",fontSize:14,fontFamily:"inherit",outline:"none",cursor:"pointer"}}),
+          lastActualVisit&&/*#__PURE__*/React.createElement("button",{
+            onClick:function(){
+              var d=lastActualVisit;
+              setFVisitDate(d.getFullYear()+"-"+(String(d.getMonth()+1).padStart(2,"0"))+"-"+(String(d.getDate()).padStart(2,"0")));
+            },
+            style:{fontSize:11,color:"#7c3aed",background:"#f5f0ff",border:"1px solid #a78bfa",borderRadius:7,padding:"3px 8px",cursor:"pointer"}
+          },"📋 最終通院日を使用")
+        )
+      ),
+
+      // 処方日数
+      /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",padding:"10px 0",borderTop:"1px solid "+C.border,flexWrap:"wrap",gap:8}},
+        /*#__PURE__*/React.createElement("div",{style:{flex:"1 1 100%"}},
+          /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:14,fontWeight:700}},"処方日数"),
+          /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11,marginTop:2}},"薬を何日分もらったか")),
+        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}},
+          [7,14,21,28].map(function(w){
+            var act=parseInt(fDays)===w;
+            return /*#__PURE__*/React.createElement("button",{key:w,onClick:function(){return setFDays(w);},style:{width:42,height:36,background:act?"#7c3aed":C.bgSub,border:"1.5px solid "+(act?"#7c3aed":C.border),borderRadius:9,cursor:"pointer",color:act?"#fff":C.textMid,fontSize:13,fontWeight:act?800:500,transition:"all 0.15s"}},w);
+          }),
+          /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,margin:"0 4px"}},"日 /"),
+          /*#__PURE__*/React.createElement("input",{type:"number",min:"1",max:"365",value:[7,14,21,28].indexOf(parseInt(fDays))>=0?"":fDays,
+            onChange:function(e){if(e.target.value) setFDays(parseInt(e.target.value));},
+            placeholder:"その他",
+            style:{width:56,background:C.bg,color:C.textDark,border:"1.5px solid "+([7,14,21,28].indexOf(parseInt(fDays))>=0?C.border:"#7c3aed"),borderRadius:9,padding:"6px 6px",fontSize:13,fontFamily:"inherit",outline:"none",textAlign:"center"}}),
+          /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,marginLeft:4}},"日"))
+      ),
+
+      // ── 処方薬（直近の通院記録に保存）─────────────────────────
+      lastActualVisitRec&&/*#__PURE__*/React.createElement("div",{style:{background:"#f0fdf4",border:"1.5px solid #86efac",borderRadius:10,padding:"10px 12px",marginTop:8,display:"flex",flexDirection:"column",gap:8}},
+        /*#__PURE__*/React.createElement("div",{style:{color:"#15803d",fontSize:13,fontWeight:700}},"💊 処方薬"),
+        /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11}},
+          "前回通院（"+lastActualVisit.getFullYear()+"年"+(lastActualVisit.getMonth()+1)+"月"+lastActualVisit.getDate()+"日）の処方内容"),
+        (function(){
+          // rxEditingがこの通院記録を指していなければ、記録本体のprescriptionsを使う
+          var current = (rxEditing&&rxEditing.id===lastActualVisitRec.id) ? rxEditing : lastActualVisitRec;
+          var list = normalizeRxList(current.prescriptions);
+          var commit = function(nextList, rxToRemember){
+            var updated=_objectSpread(_objectSpread({},lastActualVisitRec),{},{prescriptions:nextList});
+            setRxEditing(updated);
+            onUpdate(updated);
+            if (rxToRemember && onSaveSettings) {
+              onSaveSettings(_objectSpread(_objectSpread({},settings),{},{rxHistory: addToRxHistory(settings.rxHistory, rxToRemember)}));
+            }
+          };
+          return /*#__PURE__*/React.createElement(React.Fragment,null,
+            list.length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+              list.map(function(rx,di){
+                if(rxEditIdx===di){
+                  // 編集中：名称・効能・用法の3項目入力に切り替え
+                  var saveEdit=function(){
+                    var n=rxEditName.trim();
+                    if(n){
+                      var editedRx={name:n,effect:rxEditEffect.trim(),dosage:rxEditDosage.trim()};
+                      var next=list.map(function(d,idx){return idx===di?editedRx:d;});
+                      commit(next,editedRx);
+                    }
+                    setRxEditIdx(null);
+                    setRxEditName(""); setRxEditEffect(""); setRxEditDosage("");
+                  };
+                  return /*#__PURE__*/React.createElement("div",{key:di,style:{
+                    background:"#fff",border:"1.5px solid #16a34a",borderRadius:10,
+                    padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}},
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",autoFocus:true,
+                      value:rxEditName,
+                      onChange:function(e){setRxEditName(e.target.value);},
+                      onKeyDown:function(e){ if(e.key==="Escape"){ setRxEditIdx(null); } },
+                      placeholder:"名称（例: アムロジピン5mg）",
+                      style:{border:"1px solid #c8e6c9",outline:"none",background:"#f8fffa",color:"#15803d",
+                        borderRadius:6,padding:"5px 8px",fontSize:13,fontWeight:700,fontFamily:"inherit"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:getRxNameSuggestions(settings.rxHistory).filter(function(n){return !rxEditName||n.indexOf(rxEditName)!==-1;}).slice(0,8),
+                      color:"#16a34a",
+                      onPick:function(n){
+                        setRxEditName(n);
+                        var hentry=(settings.rxHistory||{})[n];
+                        if(hentry){
+                          if(hentry.effects&&hentry.effects[0]) setRxEditEffect(hentry.effects[0]);
+                          if(hentry.dosages&&hentry.dosages[0]) setRxEditDosage(hentry.dosages[0]);
+                        }
+                      }
+                    }),
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",
+                      value:rxEditEffect,
+                      onChange:function(e){setRxEditEffect(e.target.value);},
+                      onKeyDown:function(e){ if(e.key==="Escape"){ setRxEditIdx(null); } },
+                      placeholder:"効能・効果（例: 高血圧の治療）",
+                      style:{border:"1px solid "+C.border,outline:"none",background:C.bg,color:C.textDark,
+                        borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"inherit"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:rxEditName&&(settings.rxHistory||{})[rxEditName]?(settings.rxHistory[rxEditName].effects||[]):[],
+                      color:"#7c9a7c",
+                      onPick:function(v){ setRxEditEffect(v); }
+                    }),
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",
+                      value:rxEditDosage,
+                      onChange:function(e){setRxEditDosage(e.target.value);},
+                      onKeyDown:function(e){
+                        if(e.key==="Enter"){ e.preventDefault(); saveEdit(); }
+                        if(e.key==="Escape"){ setRxEditIdx(null); }
+                      },
+                      placeholder:"用法・用量（例: 1日1回 朝食後）",
+                      style:{border:"1px solid "+C.border,outline:"none",background:C.bg,color:C.textDark,
+                        borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"inherit"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:rxEditName&&(settings.rxHistory||{})[rxEditName]?(settings.rxHistory[rxEditName].dosages||[]):[],
+                      color:"#7c9a7c",
+                      onPick:function(v){ setRxEditDosage(v); }
+                    }),
+                    /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginTop:2}},
+                      /*#__PURE__*/React.createElement("button",{
+                        onClick:saveEdit,
+                        style:{flex:1,background:"#16a34a",border:"none",borderRadius:7,padding:"6px 0",
+                          cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700}
+                      },"✔️ 保存"),
+                      /*#__PURE__*/React.createElement("button",{
+                        onClick:function(){setRxEditIdx(null);setRxEditName("");setRxEditEffect("");setRxEditDosage("");},
+                        style:{flex:1,background:C.bgSub,border:"1px solid "+C.border,borderRadius:7,padding:"6px 0",
+                          cursor:"pointer",color:C.textMid,fontSize:12}
+                      },"キャンセル")
+                    )
+                  );
+                }
+                return /*#__PURE__*/React.createElement("div",{key:di,style:{
+                  background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,
+                  padding:"6px 10px",display:"flex",flexDirection:"column",gap:2}},
+                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5}},
+                    /*#__PURE__*/React.createElement("span",{style:{color:"#15803d",fontSize:13,fontWeight:700,flex:1}},rx.name),
+                    /*#__PURE__*/React.createElement("button",{
+                      onClick:function(){ setRxEditIdx(di); setRxEditName(rx.name); setRxEditEffect(rx.effect); setRxEditDosage(rx.dosage); },
+                      style:{background:"none",border:"none",cursor:"pointer",color:"#15803d",fontSize:12,
+                        lineHeight:1,padding:"0 2px",opacity:0.7}
+                    },"✏️"),
+                    /*#__PURE__*/React.createElement("button",{
+                      onClick:function(){ commit(list.filter(function(_,idx){return idx!==di;})); },
+                      style:{background:"none",border:"none",cursor:"pointer",color:"#15803d",fontSize:13,
+                        lineHeight:1,padding:"0 2px",opacity:0.7}
+                    },"✕")
+                  ),
+                  rx.effect&&/*#__PURE__*/React.createElement("div",{style:{color:"#1a7a4a",fontSize:11}},"効能・効果: "+rx.effect),
+                  rx.dosage&&/*#__PURE__*/React.createElement("div",{style:{color:"#1a7a4a",fontSize:11}},"用法・用量: "+rx.dosage)
+                );
+              })
+            ),
+            list.length===0&&/*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:12}},"まだ処方薬が登録されていません"),
+            /*#__PURE__*/React.createElement("div",{style:{background:"#fff",border:"1.5px dashed #86efac",borderRadius:10,padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}},
+              /*#__PURE__*/React.createElement("input",{
+                type:"text",
+                value:rxNewName,
+                onChange:function(e){setRxNewName(e.target.value);},
+                placeholder:"名称（例: アムロジピン5mg）",
+                style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                  border:"1.5px solid #86efac",borderRadius:6,padding:"6px 8px",fontSize:13,fontWeight:700,
+                  fontFamily:"inherit",outline:"none"}
+              }),
+              /*#__PURE__*/React.createElement(RxSuggestRow,{
+                options:getRxNameSuggestions(settings.rxHistory).filter(function(n){return !rxNewName||n.indexOf(rxNewName)!==-1;}).slice(0,8),
+                color:"#16a34a",
+                onPick:function(n){
+                  setRxNewName(n);
+                  var hentry=(settings.rxHistory||{})[n];
+                  if(hentry){
+                    if(hentry.effects&&hentry.effects[0]) setRxNewEffect(hentry.effects[0]);
+                    if(hentry.dosages&&hentry.dosages[0]) setRxNewDosage(hentry.dosages[0]);
+                  }
+                }
+              }),
+              /*#__PURE__*/React.createElement("input",{
+                type:"text",
+                value:rxNewEffect,
+                onChange:function(e){setRxNewEffect(e.target.value);},
+                placeholder:"効能・効果（例: 高血圧の治療）",
+                style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                  border:"1.5px solid "+C.border,borderRadius:6,padding:"6px 8px",fontSize:12,
+                  fontFamily:"inherit",outline:"none"}
+              }),
+              /*#__PURE__*/React.createElement(RxSuggestRow,{
+                options:rxNewName&&(settings.rxHistory||{})[rxNewName]?(settings.rxHistory[rxNewName].effects||[]):[],
+                color:"#7c9a7c",
+                onPick:function(v){ setRxNewEffect(v); }
+              }),
+              /*#__PURE__*/React.createElement("input",{
+                type:"text",
+                value:rxNewDosage,
+                onChange:function(e){setRxNewDosage(e.target.value);},
+                onKeyDown:function(e){
+                  if(e.key==="Enter"){
+                    e.preventDefault();
+                    var n=rxNewName.trim();
+                    if(n){ var newRx={name:n,effect:rxNewEffect.trim(),dosage:rxNewDosage.trim()}; commit(list.concat([newRx]),newRx); setRxNewName(""); setRxNewEffect(""); setRxNewDosage(""); }
+                  }
+                },
+                placeholder:"用法・用量（例: 1日1回 朝食後）",
+                style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                  border:"1.5px solid "+C.border,borderRadius:6,padding:"6px 8px",fontSize:12,
+                  fontFamily:"inherit",outline:"none"}
+              }),
+              /*#__PURE__*/React.createElement(RxSuggestRow,{
+                options:rxNewName&&(settings.rxHistory||{})[rxNewName]?(settings.rxHistory[rxNewName].dosages||[]):[],
+                color:"#7c9a7c",
+                onPick:function(v){ setRxNewDosage(v); }
+              }),
+              /*#__PURE__*/React.createElement("button",{
+                onClick:function(){
+                  var n=rxNewName.trim();
+                  if(n){ var newRx={name:n,effect:rxNewEffect.trim(),dosage:rxNewDosage.trim()}; commit(list.concat([newRx]),newRx); setRxNewName(""); setRxNewEffect(""); setRxNewDosage(""); }
+                },
+                style:{background:"#16a34a",border:"none",borderRadius:7,
+                  padding:"7px 0",cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700}
+              },"＋追加")
+            )
+          );
+        })()
+      ),
+
+      // プレビュー
+      previewNext&&/*#__PURE__*/React.createElement("div",{style:{background:"#f5f0ff",border:"1.5px solid #a78bfa",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,marginTop:8}},
+        /*#__PURE__*/React.createElement("span",{style:{fontSize:18}},"🗓️"),
+        /*#__PURE__*/React.createElement("div",null,
+          /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:11,fontWeight:700}},"次回通院予定（プレビュー）"),
+          /*#__PURE__*/React.createElement("div",{style:{color:"#3b0764",fontSize:15,fontWeight:800}},
+            previewNext.getFullYear()+"年"+(previewNext.getMonth()+1)+"月"+previewNext.getDate()+"日（"+WD[previewNext.getDay()]+"）"))),
+
+      // 保存ボタン
+      /*#__PURE__*/React.createElement("button",{onClick:saveVisitSettings,style:{
+        width:"100%",marginTop:12,background:visitSaved?"#b8e4b8":"#7c3aed",border:"none",
+        borderRadius:12,padding:"12px 0",cursor:"pointer",color:"#fff",fontSize:14,fontWeight:700,
+        boxShadow:visitSaved?"0 4px 14px rgba(184,228,184,0.5)":"0 4px 14px rgba(124,58,237,0.3)",
+        transition:"all 0.3s",display:"flex",alignItems:"center",justifyContent:"center",gap:8}},
+        /*#__PURE__*/React.createElement("span",{style:{fontSize:18}},visitSaved?"✅":"💾"),
+        /*#__PURE__*/React.createElement("span",null,visitSaved?"保存しました！":"通院設定を保存"))
+    )
+    ),
+
+    // ── 通院記録の履歴ページ ─────────────────────────────────────────
+    subTab==="history"&&/*#__PURE__*/React.createElement(React.Fragment,null,
+
+    // 通院記録の履歴
+    vhist.length>0&&/*#__PURE__*/React.createElement("div",{style:{background:C.card,borderRadius:16,border:"1.5px solid "+C.border,padding:16,boxShadow:"0 2px 10px "+_theme.cardShadow}},
+      /*#__PURE__*/React.createElement("div",{style:{color:C.textDark,fontSize:15,fontWeight:800,marginBottom:10}},"📋 通院記録の履歴"),
+      /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        vhist.map(function(r){
+          var d=new Date(r.date);
+          var isEditingThis = visitEditing && visitEditing.id===r.id;
+          var isDelConfThis = visitDelConf===r.id;
+          // 期間計算（この通院日〜次回通院日）
+          var vIdx = vhist.indexOf(r);
+          var pStart = new Date(r.date); pStart.setHours(0,0,0,0);
+          var pEnd = vIdx===0
+            ? (nextVisitObj ? new Date(nextVisitObj) : null)
+            : (function(){ var e=new Date(vhist[vIdx-1].date); e.setHours(23,59,59,999); return e; })();
+          var pRecs = records.filter(function(rec){
+            if (rec.mensOnly||!rec.systolic) return false;
+            var rd=new Date(rec.date);
+            return pEnd ? (rd>=pStart&&rd<=pEnd) : rd>=pStart;
+          });
+          var pMaxSys = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.systolic;})) : null;
+          var pMinSys = pRecs.length ? Math.min.apply(Math,pRecs.map(function(rec){return rec.systolic;})) : null;
+          var pMaxDia = pRecs.length ? Math.max.apply(Math,pRecs.map(function(rec){return rec.diastolic;})) : null;
+          var pMinDia = pRecs.length ? Math.min.apply(Math,pRecs.map(function(rec){return rec.diastolic;})) : null;
+          // 編集中のisVisit状態
+          return /*#__PURE__*/React.createElement("div",{key:r.id,style:{
+            background:isEditingThis?"#f5f0ff":C.bgSub,
+            borderRadius:12,border:"1.5px solid "+(isEditingThis?"#a78bfa":C.border),
+            padding:"10px 12px",transition:"all 0.2s"}},
+            // 通常表示行
+            /*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+              // 日付行＋ボタン（横並び）
+              /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                /*#__PURE__*/React.createElement("span",{style:{fontSize:15}},"🏥"),
+                /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},
+                  d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日 ("+WD[d.getDay()]+")"),
+                !isDelConfThis&&!isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:4,flexShrink:0}},
+                  /*#__PURE__*/React.createElement("button",{
+                    onClick:function(){setVisitEditing(r);setVisitDelConf(null);},
+                    style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1}
+                  },"✏️"),
+                  /*#__PURE__*/React.createElement("button",{
+                    onClick:function(){setVisitDelConf(r.id);setVisitEditing(null);},
+                    style:{fontSize:13,background:C.card,border:"1px solid "+C.border,borderRadius:7,padding:"2px 6px",cursor:"pointer",color:C.textMid,lineHeight:1,opacity:0.7}
+                  },"🗑️")
+                )
+              ),
+              // 最高・最低値・件数バッジ
+              pRecs.length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:5,flexWrap:"wrap",paddingLeft:23}},
+                /*#__PURE__*/React.createElement("div",{style:{background:"#fff0f5",border:"1px solid #f9c8da",borderRadius:6,padding:"2px 8px",fontSize:10,display:"flex",alignItems:"center",gap:3}},
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#e85050"}},"🔴"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"収縮期"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最高"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#c03030",fontWeight:800}},pMaxSys),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最低"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#c03030",fontWeight:800}},pMinSys),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"mmHg")),
+                /*#__PURE__*/React.createElement("div",{style:{background:"#f0fff4",border:"1px solid #c8f0d8",borderRadius:6,padding:"2px 8px",fontSize:10,display:"flex",alignItems:"center",gap:3}},
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#1a8a1a"}},"🟢"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"拡張期"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最高"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#1a7a1a",fontWeight:800}},pMaxDia),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"最低"),
+                  /*#__PURE__*/React.createElement("span",{style:{color:"#1a7a1a",fontWeight:800}},pMinDia),
+                  /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:9}},"mmHg")),
+                /*#__PURE__*/React.createElement("div",{style:{background:"#f0f0f0",border:"1px solid #ddd",borderRadius:6,padding:"2px 8px",fontSize:10,color:C.textLight}},
+                  pRecs.length+"件"+(pEnd?" / "+(pStart.getMonth()+1)+"/"+pStart.getDate()+"〜"+(pEnd.getMonth()+1)+"/"+pEnd.getDate():"〜現在"))
+              ),
+              // メモ表示
+              r.memo&&/*#__PURE__*/React.createElement("div",{style:{paddingLeft:23,color:C.textMid,fontSize:11,marginTop:2}},
+                "📝 "+r.memo),
+              // 処方薬表示
+              (r.prescriptions||[]).length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,paddingLeft:23,marginTop:2}},
+                normalizeRxList(r.prescriptions).map(function(rx,di){
+                  return /*#__PURE__*/React.createElement("div",{key:di,style:{
+                    background:"#dcfce7",border:"1px solid #86efac",borderRadius:8,
+                    padding:"3px 8px",display:"inline-flex",flexDirection:"column",gap:1,maxWidth:"fit-content"}},
+                    /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:3}},
+                      /*#__PURE__*/React.createElement("span",{style:{fontSize:10}},"💊"),
+                      /*#__PURE__*/React.createElement("span",{style:{fontSize:10,color:"#15803d",fontWeight:700}},rx.name)),
+                    rx.effect&&/*#__PURE__*/React.createElement("div",{style:{fontSize:9,color:"#1a7a4a"}},"効能・効果: "+rx.effect),
+                    rx.dosage&&/*#__PURE__*/React.createElement("div",{style:{fontSize:9,color:"#1a7a4a"}},"用法・用量: "+rx.dosage)
+                  );
+                })
+              )
+            ),
+            // 削除確認
+            isDelConfThis&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginTop:8}},
+              /*#__PURE__*/React.createElement("div",{style:{flex:1,color:"#c03030",fontSize:12,fontWeight:600,alignSelf:"center"}},"通院フラグを外しますか？（血圧記録は残ります）"),
+              /*#__PURE__*/React.createElement("button",{
+                onClick:function(){
+                  // 記録自体は残し、通院フラグのみOFFにする
+                  onUpdate(_objectSpread(_objectSpread({},r),{},{isVisit:false}));
+                  setVisitDelConf(null);
+                },
+                style:{background:"#fff1f1",border:"1.5px solid #f87171",borderRadius:8,padding:"5px 12px",cursor:"pointer",color:"#e06060",fontSize:12,fontWeight:700}
+              },"通院フラグを外す"),
+              /*#__PURE__*/React.createElement("button",{
+                onClick:function(){setVisitDelConf(null);},
+                style:{background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:8,padding:"5px 10px",cursor:"pointer",color:C.textMid,fontSize:12}
+              },"キャンセル")
+            ),
+            // 編集フォーム（isVisitのON/OFFと、この日を設定）
+            isEditingThis&&/*#__PURE__*/React.createElement("div",{style:{marginTop:10,borderTop:"1px solid #c4b5fd",paddingTop:10,display:"flex",flexDirection:"column",gap:10}},
+              /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700,marginBottom:2}},"✏️ 編集"),
+
+              // ── 通院フラグ ──────────────────────────────────
+              /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#ede9fe",borderRadius:8}},
+                /*#__PURE__*/React.createElement("span",{style:{fontSize:14}},"🏥"),
+                /*#__PURE__*/React.createElement("span",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:500}},"通院フラグ"),
+                /*#__PURE__*/React.createElement(ToggleSwitch,{on:visitEditing.isVisit||false,
+                  onChange:function(v){
+                    setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{isVisit:v}));
+                  },activeColor:"#7c3aed"})
+              ),
+
+              // ── 通院設定に反映チェック ─────────────────────
+              /*#__PURE__*/React.createElement("div",{style:{background:"#f5f0ff",border:"1.5px solid #a78bfa",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}},
+                /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:12,fontWeight:700}},"⚙️ 通院設定（処方・次回通院）に反映"),
+                /*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:11}},"この通院日を「通院日」として設定し、次回通院日を再計算します"),
+
+                // 通院日（この記録の日付で自動セット）
+                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                  /*#__PURE__*/React.createElement("div",{style:{flex:1,color:C.textDark,fontSize:13,fontWeight:600}},"通院日"),
+                  /*#__PURE__*/React.createElement("div",{style:{color:"#5b21b6",fontSize:13,fontWeight:700}},
+                    (new Date(visitEditing.date)).getFullYear()+"年"+
+                    ((new Date(visitEditing.date)).getMonth()+1)+"月"+
+                    (new Date(visitEditing.date)).getDate()+"日"
+                  )
+                ),
+
+                // 処方日数
+                /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+                  /*#__PURE__*/React.createElement("div",{style:{flex:"1 1 100%",color:C.textDark,fontSize:13,fontWeight:600}},"処方日数"),
+                  /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:3,flexWrap:"wrap"}},
+                    [7,14,21,28].map(function(w){
+                      var act=(visitEditing._editDays||fDays||28)===w;
+                      return /*#__PURE__*/React.createElement("button",{key:w,
+                        onClick:function(){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editDays:w}));},
+                        style:{width:36,height:30,background:act?"#7c3aed":C.bgSub,
+                          border:"1.5px solid "+(act?"#7c3aed":C.border),borderRadius:7,
+                          cursor:"pointer",color:act?"#fff":C.textMid,fontSize:12,fontWeight:act?800:500,transition:"all 0.15s"}
+                      },w);
+                    }),
+                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,margin:"0 3px"}},"日 /"),
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"number",min:"1",max:"365",
+                      value:[7,14,21,28].indexOf(visitEditing._editDays||fDays||28)>=0?"":(visitEditing._editDays||fDays),
+                      onChange:function(e){if(e.target.value) setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{_editDays:parseInt(e.target.value)}));},
+                      placeholder:"他",
+                      style:{width:46,background:C.bg,color:C.textDark,border:"1.5px solid "+([7,14,21,28].indexOf(visitEditing._editDays||fDays||28)>=0?C.border:"#7c3aed"),
+                        borderRadius:7,padding:"4px 5px",fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"center"}
+                    }),
+                    /*#__PURE__*/React.createElement("span",{style:{color:C.textLight,fontSize:12,marginLeft:2}},"日")
+                  )
+                ),
+
+                // 次回通院プレビュー
+                (function(){
+                  var w=visitEditing._editDays||fDays||28;
+                  var vd=new Date(visitEditing.date);
+                  var nv=new Date(vd.getTime()+w*86400000);
+                  var WDx=["日","月","火","水","木","金","土"];
+                  return /*#__PURE__*/React.createElement("div",{style:{background:"#ede9fe",borderRadius:8,padding:"6px 10px",fontSize:11,color:"#5b21b6",fontWeight:600}},
+                    "🗓️ 次回通院予定: "+nv.getFullYear()+"年"+(nv.getMonth()+1)+"月"+nv.getDate()+"日（"+WDx[nv.getDay()]+"）"
+                  );
+                })()
+              ),
+
+              // ── 処方薬編集 ─────────────────────────────────
+              (function(){
+                var hlist = normalizeRxList(visitEditing.prescriptions);
+                var hcommit = function(nextList, rxToRemember){
+                  setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{prescriptions:nextList}));
+                  if (rxToRemember && onSaveSettings) {
+                    onSaveSettings(_objectSpread(_objectSpread({},settings),{},{rxHistory: addToRxHistory(settings.rxHistory, rxToRemember)}));
+                  }
+                };
+                return /*#__PURE__*/React.createElement("div",{style:{background:"#f0fdf4",border:"1.5px solid #86efac",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}},
+                  /*#__PURE__*/React.createElement("div",{style:{color:"#15803d",fontSize:12,fontWeight:700}},"💊 処方薬"),
+                  hlist.length>0&&/*#__PURE__*/React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+                    hlist.map(function(rx,di){
+                      if(hrxEditIdx===di){
+                        var hSaveEdit=function(){
+                          var n=hrxEditName.trim();
+                          if(n){
+                            var editedRx={name:n,effect:hrxEditEffect.trim(),dosage:hrxEditDosage.trim()};
+                            var next=hlist.map(function(d,idx){return idx===di?editedRx:d;});
+                            hcommit(next,editedRx);
+                          }
+                          setHrxEditIdx(null);
+                          setHrxEditName(""); setHrxEditEffect(""); setHrxEditDosage("");
+                        };
+                        return /*#__PURE__*/React.createElement("div",{key:di,style:{
+                          background:"#fff",border:"1.5px solid #16a34a",borderRadius:10,
+                          padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}},
+                          /*#__PURE__*/React.createElement("input",{
+                            type:"text",autoFocus:true,
+                            value:hrxEditName,
+                            onChange:function(e){setHrxEditName(e.target.value);},
+                            onKeyDown:function(e){ if(e.key==="Escape"){ setHrxEditIdx(null); } },
+                            placeholder:"名称（例: アムロジピン5mg）",
+                            style:{border:"1px solid #c8e6c9",outline:"none",background:"#f8fffa",color:"#15803d",
+                              borderRadius:6,padding:"5px 8px",fontSize:13,fontWeight:700,fontFamily:"inherit"}
+                          }),
+                          /*#__PURE__*/React.createElement(RxSuggestRow,{
+                            options:getRxNameSuggestions(settings.rxHistory).filter(function(n){return !hrxEditName||n.indexOf(hrxEditName)!==-1;}).slice(0,8),
+                            color:"#16a34a",
+                            onPick:function(n){
+                              setHrxEditName(n);
+                              var hentry=(settings.rxHistory||{})[n];
+                              if(hentry){
+                                if(hentry.effects&&hentry.effects[0]) setHrxEditEffect(hentry.effects[0]);
+                                if(hentry.dosages&&hentry.dosages[0]) setHrxEditDosage(hentry.dosages[0]);
+                              }
+                            }
+                          }),
+                          /*#__PURE__*/React.createElement("input",{
+                            type:"text",
+                            value:hrxEditEffect,
+                            onChange:function(e){setHrxEditEffect(e.target.value);},
+                            onKeyDown:function(e){ if(e.key==="Escape"){ setHrxEditIdx(null); } },
+                            placeholder:"効能・効果（例: 高血圧の治療）",
+                            style:{border:"1px solid "+C.border,outline:"none",background:C.bg,color:C.textDark,
+                              borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"inherit"}
+                          }),
+                          /*#__PURE__*/React.createElement(RxSuggestRow,{
+                            options:hrxEditName&&(settings.rxHistory||{})[hrxEditName]?(settings.rxHistory[hrxEditName].effects||[]):[],
+                            color:"#7c9a7c",
+                            onPick:function(v){ setHrxEditEffect(v); }
+                          }),
+                          /*#__PURE__*/React.createElement("input",{
+                            type:"text",
+                            value:hrxEditDosage,
+                            onChange:function(e){setHrxEditDosage(e.target.value);},
+                            onKeyDown:function(e){
+                              if(e.key==="Enter"){ e.preventDefault(); hSaveEdit(); }
+                              if(e.key==="Escape"){ setHrxEditIdx(null); }
+                            },
+                            placeholder:"用法・用量（例: 1日1回 朝食後）",
+                            style:{border:"1px solid "+C.border,outline:"none",background:C.bg,color:C.textDark,
+                              borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"inherit"}
+                          }),
+                          /*#__PURE__*/React.createElement(RxSuggestRow,{
+                            options:hrxEditName&&(settings.rxHistory||{})[hrxEditName]?(settings.rxHistory[hrxEditName].dosages||[]):[],
+                            color:"#7c9a7c",
+                            onPick:function(v){ setHrxEditDosage(v); }
+                          }),
+                          /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8,marginTop:2}},
+                            /*#__PURE__*/React.createElement("button",{
+                              onClick:hSaveEdit,
+                              style:{flex:1,background:"#16a34a",border:"none",borderRadius:7,padding:"6px 0",
+                                cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700}
+                            },"✔️ 確定"),
+                            /*#__PURE__*/React.createElement("button",{
+                              onClick:function(){setHrxEditIdx(null);setHrxEditName("");setHrxEditEffect("");setHrxEditDosage("");},
+                              style:{flex:1,background:C.bgSub,border:"1px solid "+C.border,borderRadius:7,padding:"6px 0",
+                                cursor:"pointer",color:C.textMid,fontSize:12}
+                            },"キャンセル")
+                          )
+                        );
+                      }
+                      return /*#__PURE__*/React.createElement("div",{key:di,style:{
+                        background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,
+                        padding:"6px 10px",display:"flex",flexDirection:"column",gap:2}},
+                        /*#__PURE__*/React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5}},
+                          /*#__PURE__*/React.createElement("span",{style:{color:"#15803d",fontSize:13,fontWeight:700,flex:1}},rx.name),
+                          /*#__PURE__*/React.createElement("button",{
+                            onClick:function(){ setHrxEditIdx(di); setHrxEditName(rx.name); setHrxEditEffect(rx.effect); setHrxEditDosage(rx.dosage); },
+                            style:{background:"none",border:"none",cursor:"pointer",color:"#15803d",fontSize:12,
+                              lineHeight:1,padding:"0 2px",opacity:0.7}
+                          },"✏️"),
+                          /*#__PURE__*/React.createElement("button",{
+                            onClick:function(){ hcommit(hlist.filter(function(_,idx){return idx!==di;})); },
+                            style:{background:"none",border:"none",cursor:"pointer",color:"#15803d",fontSize:13,
+                              lineHeight:1,padding:"0 2px",opacity:0.7}
+                          },"✕")
+                        ),
+                        rx.effect&&/*#__PURE__*/React.createElement("div",{style:{color:"#1a7a4a",fontSize:11}},"効能・効果: "+rx.effect),
+                        rx.dosage&&/*#__PURE__*/React.createElement("div",{style:{color:"#1a7a4a",fontSize:11}},"用法・用量: "+rx.dosage)
+                      );
+                    })
+                  ),
+                  hlist.length===0&&/*#__PURE__*/React.createElement("div",{style:{color:C.textLight,fontSize:12}},"まだ処方薬が登録されていません"),
+                  /*#__PURE__*/React.createElement("div",{style:{background:"#fff",border:"1.5px dashed #86efac",borderRadius:10,padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}},
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",
+                      value:hrxNewName,
+                      onChange:function(e){setHrxNewName(e.target.value);},
+                      placeholder:"名称（例: アムロジピン5mg）",
+                      style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                        border:"1.5px solid #86efac",borderRadius:6,padding:"6px 8px",fontSize:13,fontWeight:700,
+                        fontFamily:"inherit",outline:"none"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:getRxNameSuggestions(settings.rxHistory).filter(function(n){return !hrxNewName||n.indexOf(hrxNewName)!==-1;}).slice(0,8),
+                      color:"#16a34a",
+                      onPick:function(n){
+                        setHrxNewName(n);
+                        var hentry=(settings.rxHistory||{})[n];
+                        if(hentry){
+                          if(hentry.effects&&hentry.effects[0]) setHrxNewEffect(hentry.effects[0]);
+                          if(hentry.dosages&&hentry.dosages[0]) setHrxNewDosage(hentry.dosages[0]);
+                        }
+                      }
+                    }),
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",
+                      value:hrxNewEffect,
+                      onChange:function(e){setHrxNewEffect(e.target.value);},
+                      placeholder:"効能・効果（例: 高血圧の治療）",
+                      style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                        border:"1.5px solid "+C.border,borderRadius:6,padding:"6px 8px",fontSize:12,
+                        fontFamily:"inherit",outline:"none"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:hrxNewName&&(settings.rxHistory||{})[hrxNewName]?(settings.rxHistory[hrxNewName].effects||[]):[],
+                      color:"#7c9a7c",
+                      onPick:function(v){ setHrxNewEffect(v); }
+                    }),
+                    /*#__PURE__*/React.createElement("input",{
+                      type:"text",
+                      value:hrxNewDosage,
+                      onChange:function(e){setHrxNewDosage(e.target.value);},
+                      onKeyDown:function(e){
+                        if(e.key==="Enter"){
+                          e.preventDefault();
+                          var n=hrxNewName.trim();
+                          if(n){ var newRx={name:n,effect:hrxNewEffect.trim(),dosage:hrxNewDosage.trim()}; hcommit(hlist.concat([newRx]),newRx); setHrxNewName(""); setHrxNewEffect(""); setHrxNewDosage(""); }
+                        }
+                      },
+                      placeholder:"用法・用量（例: 1日1回 朝食後）",
+                      style:{boxSizing:"border-box",background:C.bg,color:C.textDark,
+                        border:"1.5px solid "+C.border,borderRadius:6,padding:"6px 8px",fontSize:12,
+                        fontFamily:"inherit",outline:"none"}
+                    }),
+                    /*#__PURE__*/React.createElement(RxSuggestRow,{
+                      options:hrxNewName&&(settings.rxHistory||{})[hrxNewName]?(settings.rxHistory[hrxNewName].dosages||[]):[],
+                      color:"#7c9a7c",
+                      onPick:function(v){ setHrxNewDosage(v); }
+                    }),
+                    /*#__PURE__*/React.createElement("button",{
+                      onClick:function(){
+                        var n=hrxNewName.trim();
+                        if(n){ var newRx={name:n,effect:hrxNewEffect.trim(),dosage:hrxNewDosage.trim()}; hcommit(hlist.concat([newRx]),newRx); setHrxNewName(""); setHrxNewEffect(""); setHrxNewDosage(""); }
+                      },
+                      style:{background:"#16a34a",border:"none",borderRadius:7,
+                        padding:"7px 0",cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700}
+                    },"＋追加")
+                  )
+                );
+              })(),
+
+              // ── メモ編集 ─────────────────────────────────
+              /*#__PURE__*/React.createElement("input",{
+                type:"text",
+                value:visitEditing.memo||"",
+                onChange:function(e){setVisitEditing(_objectSpread(_objectSpread({},visitEditing),{},{memo:e.target.value}));},
+                placeholder:"メモを編集",
+                style:{width:"100%",boxSizing:"border-box",background:C.bg,color:C.textDark,
+                  border:"1.5px solid #a78bfa",borderRadius:8,padding:"7px 10px",fontSize:13,
+                  fontFamily:"inherit",outline:"none"}
+              }),
+
+              // ── 保存・キャンセル ──────────────────────────
+              /*#__PURE__*/React.createElement("div",{style:{display:"flex",gap:8}},
+                /*#__PURE__*/React.createElement("button",{
+                  onClick:function(){
+                    // 記録を更新（編集中だけの一時フィールドは除いて保存）
+                    var toSave=_objectSpread({},visitEditing);
+                    delete toSave._editDays;
+                    onUpdate(toSave);
+                    // 通院設定（処方日数・前回通院日）を更新
+                    var w=visitEditing._editDays||fDays||28;
+                    var vd=new Date(visitEditing.date);
+                    var dateStr=vd.getFullYear()+"-"+String(vd.getMonth()+1).padStart(2,"0")+"-"+String(vd.getDate()).padStart(2,"0");
+                    if(onSaveSettings) onSaveSettings(_objectSpread(_objectSpread({},settings),{},{visitDate:dateStr,prescriptionDays:w}));
+                    setFVisitDate(dateStr);
+                    setFDays(w);
+                    setVisitEditing(null);
+                  },
+                  style:{flex:2,background:"#7c3aed",border:"none",borderRadius:10,padding:"10px 0",
+                    cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700,
+                    boxShadow:"0 3px 10px rgba(124,58,237,0.3)"}
+                },"💾 記録＋設定を保存"),
+                /*#__PURE__*/React.createElement("button",{
+                  onClick:function(){setVisitEditing(null);},
+                  style:{flex:1,background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:10,
+                    padding:"10px 0",cursor:"pointer",color:C.textMid,fontSize:13}
+                },"キャンセル")
+              )
+            )
+          );
+        }))
+    ),
+
+    vhist.length===0&&/*#__PURE__*/React.createElement("div",{style:{textAlign:"center",padding:"30px 0",color:C.textLight,fontSize:13}},
+      "記録タブで「通院した」をONにすると",/*#__PURE__*/React.createElement("br",null),"ここに通院履歴が表示されます")
+    )
   );
 }
 
@@ -3085,6 +3568,10 @@ function SettingsTab(_ref20) {
     _useState90 = _slicedToArray(_useState89, 2),
     saved = _useState90[0],
     setSaved = _useState90[1];
+  var _useStateRxSub = useState("general"),
+    _useStateRxSub2 = _slicedToArray(_useStateRxSub, 2),
+    stSubTab = _useStateRxSub2[0],
+    setStSubTab = _useStateRxSub2[1];
   useEffect(function () {
     setForm(settings);
   }, [settings]);
@@ -3105,7 +3592,7 @@ function SettingsTab(_ref20) {
               systolicWarning: parseInt(form.systolicWarning) || 140,
               diastolicWarning: parseInt(form.diastolicWarning) || 90,
               visitDate: form.visitDate || "",
-              prescriptionWeeks: parseInt(form.prescriptionWeeks) || 4
+              prescriptionDays: parseInt(form.prescriptionDays) || 28
             }));
           case 1:
             setSaved(true);
@@ -3184,6 +3671,29 @@ function SettingsTab(_ref20) {
     color: "#e06060"
   }];
   return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  },
+  /*#__PURE__*/React.createElement("div",{style:{display:"flex",background:C.card,borderRadius:12,padding:4,gap:4,border:"1.5px solid "+C.border}},
+    [["general","⚙️ 設定"],["rxHistory","💊 処方薬の履歴"]].map(function(tb){
+      var active=stSubTab===tb[0];
+      return /*#__PURE__*/React.createElement("button",{key:tb[0],onClick:function(){setStSubTab(tb[0]);},
+        style:{flex:1,background:active?C.primaryDk:"transparent",border:"none",
+          borderRadius:9,padding:"9px 0",cursor:"pointer",fontSize:13,fontWeight:700,
+          color:active?"#fff":C.textMid,transition:"all 0.2s",
+          boxShadow:active?"0 2px 8px "+_theme.btnShadow:"none"}
+      },tb[1]);
+    })
+  ),
+  stSubTab==="rxHistory" && /*#__PURE__*/React.createElement(RxHistoryManager,{
+    rxHistory:settings.rxHistory,
+    onSave:onSave,
+    settings:settings
+  }),
+  stSubTab==="general" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -3342,7 +3852,8 @@ function SettingsTab(_ref20) {
       textAlign: "center",
       lineHeight: 1.9
     }
-  }, "\u203B \u3053\u306E\u30A2\u30D7\u30EA\u306F\u533B\u7642\u6A5F\u5668\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002", /*#__PURE__*/React.createElement("br", null), "\u8A3A\u65AD\u30FB\u6CBB\u7642\u306F\u5FC5\u305A\u533B\u5E2B\u306B\u3054\u76F8\u8AC7\u304F\u3060\u3055\u3044\u3002"));
+  }, "\u203B \u3053\u306E\u30A2\u30D7\u30EA\u306F\u533B\u7642\u6A5F\u5668\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002", /*#__PURE__*/React.createElement("br", null), "\u8A3A\u65AD\u30FB\u6CBB\u7642\u306F\u5FC5\u305A\u533B\u5E2B\u306B\u3054\u76F8\u8AC7\u304F\u3060\u3055\u3044\u3002"))
+  );
 }
 
 // ─── 共通コンポーネント ───────────────────────────────────────────────────────
@@ -3559,6 +4070,121 @@ function StatVal(_ref27) {
       marginTop: 1
     }
   }, label));
+}
+// 処方薬の入力候補（過去の入力値）をタグで表示し、タップで選択できるようにする
+function RxHistoryManager(_ref_rxh) {
+  var rxHistory = _ref_rxh.rxHistory, onSave = _ref_rxh.onSave, settings = _ref_rxh.settings;
+  var hist = rxHistory || {};
+  var names = Object.keys(hist).sort();
+
+  var saveHist = function (nextHist) {
+    onSave(_objectSpread(_objectSpread({}, settings), {}, { rxHistory: nextHist }));
+  };
+  var removeName = function (name) {
+    var next = Object.assign({}, hist);
+    delete next[name];
+    saveHist(next);
+  };
+  var removeEffect = function (name, idx) {
+    var next = Object.assign({}, hist);
+    var entry = { effects: next[name].effects.slice(), dosages: next[name].dosages.slice() };
+    entry.effects.splice(idx, 1);
+    next[name] = entry;
+    saveHist(next);
+  };
+  var removeDosage = function (name, idx) {
+    var next = Object.assign({}, hist);
+    var entry = { effects: next[name].effects.slice(), dosages: next[name].dosages.slice() };
+    entry.dosages.splice(idx, 1);
+    next[name] = entry;
+    saveHist(next);
+  };
+
+  if (names.length === 0) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: { background: C.card, borderRadius: 16, border: "1.5px solid " + C.border, padding: 16, boxShadow: "0 2px 10px " + _theme.cardShadow }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { color: C.textDark, fontSize: 15, fontWeight: 800, marginBottom: 4 } }, "💊 処方薬の履歴"),
+      /*#__PURE__*/React.createElement("div", { style: { color: C.textLight, fontSize: 12 } }, "通院タブで処方薬を記録すると、名称・効能・用法の入力履歴がここに表示されます。次回以降、同じ薬を入力する際に候補としてタップで選べるようになります。")
+    );
+  }
+
+  return /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+    /*#__PURE__*/React.createElement("div", {
+      style: { background: C.card, borderRadius: 16, border: "1.5px solid " + C.border, padding: 16, boxShadow: "0 2px 10px " + _theme.cardShadow }
+    },
+      /*#__PURE__*/React.createElement("div", { style: { color: C.textDark, fontSize: 15, fontWeight: 800, marginBottom: 4 } }, "💊 処方薬の履歴"),
+      /*#__PURE__*/React.createElement("div", { style: { color: C.textLight, fontSize: 12 } }, "過去に入力した名称・効能・用法です。入力時の候補として使われます。不要な項目は削除できます。")
+    ),
+    names.map(function (name) {
+      var entry = hist[name];
+      return /*#__PURE__*/React.createElement("div", {
+        key: name,
+        style: { background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }
+      },
+        /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+          /*#__PURE__*/React.createElement("span", { style: { fontSize: 14, fontWeight: 700, color: "#15803d", flex: 1 } }, name),
+          /*#__PURE__*/React.createElement("button", {
+            onClick: function () { removeName(name); },
+            style: { background: "#fff", border: "1px solid #86efac", borderRadius: 7, padding: "3px 9px", cursor: "pointer", color: "#c03030", fontSize: 11, fontWeight: 700 }
+          }, "削除")
+        ),
+        entry.effects && entry.effects.length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } },
+          /*#__PURE__*/React.createElement("div", { style: { color: "#1a7a4a", fontSize: 10, fontWeight: 700 } }, "効能・効果の履歴"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 5 } },
+            entry.effects.map(function (eff, ei) {
+              return /*#__PURE__*/React.createElement("div", {
+                key: ei,
+                style: { display: "flex", alignItems: "center", gap: 4, background: "#fff", border: "1px solid #86efac", borderRadius: 14, padding: "3px 6px 3px 10px" }
+              },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#1a7a4a" } }, eff),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function () { removeEffect(name, ei); },
+                  style: { background: "none", border: "none", cursor: "pointer", color: "#1a7a4a", fontSize: 12, padding: "0 2px", opacity: 0.7 }
+                }, "✕")
+              );
+            })
+          )
+        ),
+        entry.dosages && entry.dosages.length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } },
+          /*#__PURE__*/React.createElement("div", { style: { color: "#1a7a4a", fontSize: 10, fontWeight: 700 } }, "用法・用量の履歴"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 5 } },
+            entry.dosages.map(function (dos, di) {
+              return /*#__PURE__*/React.createElement("div", {
+                key: di,
+                style: { display: "flex", alignItems: "center", gap: 4, background: "#fff", border: "1px solid #86efac", borderRadius: 14, padding: "3px 6px 3px 10px" }
+              },
+                /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "#1a7a4a" } }, dos),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function () { removeDosage(name, di); },
+                  style: { background: "none", border: "none", cursor: "pointer", color: "#1a7a4a", fontSize: 12, padding: "0 2px", opacity: 0.7 }
+                }, "✕")
+              );
+            })
+          )
+        )
+      );
+    })
+  );
+}
+function RxSuggestRow(_ref_rxs) {
+  var options = _ref_rxs.options, onPick = _ref_rxs.onPick, color = _ref_rxs.color;
+  if (!options || options.length === 0) return null;
+  var c = color || "#16a34a";
+  return /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", flexWrap: "wrap", gap: 5, marginTop: -2 }
+  }, options.map(function (opt, i) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: i,
+      type: "button",
+      onClick: function () { onPick(opt); },
+      style: {
+        background: "#fff", border: "1px solid " + c, borderRadius: 14,
+        padding: "3px 10px", fontSize: 11, color: c, cursor: "pointer", fontWeight: 600,
+        maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+      }
+    }, opt);
+  }));
 }
 function ToggleSwitch(_ref28) {
   var on = _ref28.on,
