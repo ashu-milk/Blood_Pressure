@@ -150,6 +150,19 @@ var DEFAULT_SETTINGS = {
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
+// id が無い／異なる端末で生成された記録でも重複を検出するための指紋（内容ベース）
+function recordFingerprint(r) {
+  var d = r && r.date ? new Date(r.date) : null;
+  var dKey = d && !isNaN(d) ? d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()+"-"+d.getHours()+":"+d.getMinutes() : "no-date";
+  return [
+    dKey,
+    r && r.timeOfDay || "",
+    r && r.systolic != null ? r.systolic : "",
+    r && r.diastolic != null ? r.diastolic : "",
+    r && r.pulse != null ? r.pulse : "",
+    r && r.isMenstruation ? "1" : "0"
+  ].join("|");
+}
 function getCategory(sys, dia, s) {
   if (!sys && !dia) return {
     label: "生理記録",
@@ -985,10 +998,29 @@ function BPTracker() {
   }), tab === "data" && /*#__PURE__*/React.createElement(DataTab, {
     records: records,
     settings: settings,
-    onImport: function(imported) {
-      setRecords(imported.records || records);
-      persistRecords(imported.records || records);
-      if (imported.settings) { saveSettings(imported.settings); }
+    onImport: function(imported, mode) {
+      var incoming = imported.records || [];
+      if (mode === "merge") {
+        var existingIds = new Set(records.filter(function(r){return r.id;}).map(function(r){ return r.id; }));
+        // id を持たない記録同士の重複判定にのみ使うフォールバック指紋（id一致を最優先・最優先の判定とする）
+        var existingKeysNoId = new Set(records.filter(function(r){return !r.id;}).map(recordFingerprint));
+        var added = incoming.filter(function(r){
+          if (r.id) return !existingIds.has(r.id);
+          // id が無い記録は、こちらも id が無い既存記録の中だけで内容一致を見てスキップ判定する
+          return !existingKeysNoId.has(recordFingerprint(r));
+        });
+        var merged = _toConsumableArray(records).concat(_toConsumableArray(added)).sort(function(a,b){
+          return new Date(b.date) - new Date(a.date);
+        });
+        setRecords(merged);
+        persistRecords(merged);
+        return added.length;
+      } else {
+        setRecords(incoming);
+        persistRecords(incoming);
+        if (imported.settings) { saveSettings(imported.settings); }
+        return incoming.length;
+      }
     }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2876,12 +2908,16 @@ function DataTab(_ref_dt) {
         var parsed = JSON.parse(ev.target.result);
         if (!parsed.records || !Array.isArray(parsed.records)) {
           setImportMsg("\u274C \u5F62\u5F0F\u304C\u6B63\u3057\u304F\u3042\u308A\u307E\u305B\u3093\u3002blood_pressure_*.json\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044");
+          setImportConfirm(false);
+          setPendingData(null);
           return;
         }
         setPendingData(parsed);
         setImportConfirm(true);
         setImportMsg("\u300C"+file.name+"\u300D: "+parsed.records.length+"\u4EF6\u306E\u8A18\u9332\u304C\u898B\u3064\u304B\u308A\u307E\u3057\u305F");
       } catch(err) {
+        setImportConfirm(false);
+        setPendingData(null);
         setImportMsg("\u274C JSON\u306E\u89E3\u6790\u306B\u5931\u6557\u3057\u307E\u3057\u305F: " + err.message);
       }
     };
@@ -2889,13 +2925,18 @@ function DataTab(_ref_dt) {
     e.target.value = "";
   };
 
-  var handleImportConfirm = function() {
+  var handleImportConfirm = function(mode) {
     if (!pendingData) return;
-    onImport(pendingData);
+    var resultCount = onImport(pendingData, mode);
     setImportConfirm(false);
     setPendingData(null);
-    setImportMsg("\u2705 \u30A4\u30F3\u30DD\u30FC\u30C8\u5B8C\u4E86\uFF01"+pendingData.records.length+"\u4EF6\u306E\u8A18\u9332\u3092\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F");
-    setTimeout(function(){setImportMsg(null);}, 4000);
+    if (mode === "merge") {
+      var skipped = pendingData.records.length - resultCount;
+      setImportMsg("\u2705 \u8FFD\u8A18\u5B8C\u4E86\uFF01\u65B0\u898F"+resultCount+"\u4EF6\u3092\u8FFD\u52A0"+(skipped>0?"\uFF08\u91CD\u8907"+skipped+"\u4EF6\u306F\u30B9\u30AD\u30C3\u30D7\uFF09":""));
+    } else {
+      setImportMsg("\u2705 \u4E0A\u66F8\u304D\u5B8C\u4E86\uFF01"+resultCount+"\u4EF6\u306E\u8A18\u9332\u3092\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F");
+    }
+    setTimeout(function(){setImportMsg(null);}, 5000);
   };
 
   var handleImportCancel = function() {
@@ -2989,16 +3030,21 @@ function DataTab(_ref_dt) {
         style:{background:"#fef9c3",border:"1.5px solid #fbbf24",borderRadius:10,padding:"12px 14px",marginBottom:10}
       },
         /*#__PURE__*/React.createElement("div", {style:{color:"#92400e",fontSize:13,fontWeight:700,marginBottom:8}},
-          "⚠️ 現在の記録（"+records.length+"件）を上書きします。よろしいですか？"),
-        /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8}},
+          "📋 "+(pendingData ? pendingData.records.length : 0)+"件の記録が見つかりました。読み込み方法を選んでください"),
+        /*#__PURE__*/React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
           /*#__PURE__*/React.createElement("button", {
-            onClick:handleImportConfirm,
-            style:{flex:2,background:"#f59e0b",border:"none",borderRadius:10,padding:"9px 0",
+            onClick:function(){ handleImportConfirm("merge"); },
+            style:{background:"#5aaa5a",border:"none",borderRadius:10,padding:"10px 0",
               cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700}
-          }, "✅ インポートする"),
+          }, "➕ 補足分のみ追加（既存データは残す）"),
+          /*#__PURE__*/React.createElement("button", {
+            onClick:function(){ handleImportConfirm("overwrite"); },
+            style:{background:"#f59e0b",border:"none",borderRadius:10,padding:"10px 0",
+              cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700}
+          }, "⚠️ 全て上書き（現在の"+records.length+"件は消えます）"),
           /*#__PURE__*/React.createElement("button", {
             onClick:handleImportCancel,
-            style:{flex:1,background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:10,
+            style:{background:C.bgSub,border:"1.5px solid "+C.border,borderRadius:10,
               padding:"9px 0",cursor:"pointer",color:C.textMid,fontSize:13}
           }, "キャンセル")
         )
@@ -3007,8 +3053,8 @@ function DataTab(_ref_dt) {
         /*#__PURE__*/React.createElement("div", {style:{color:C.textMid,fontSize:12,fontWeight:700,marginBottom:4}}, "\uD83D\uDCA1 \u4F7F\u3044\u6B63"),
         /*#__PURE__*/React.createElement("ul", {style:{margin:0,paddingLeft:16,color:C.textLight,fontSize:12,lineHeight:1.8,listStyle:"disc"}},
           /*#__PURE__*/React.createElement("li", null, "\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u305FJSON\u30D5\u30A1\u30A4\u30EB\u3092\u9078\u629E\u3057\u307E\u3059"),
-          /*#__PURE__*/React.createElement("li", null, "\u78BA\u8A8D\u30C0\u30A4\u30A2\u30ED\u30B0\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002\u5185\u5BB9\u3092\u78BA\u8A8D\u3057\u3066\u304B\u3089\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u3066\u304F\u3060\u3055\u3044"),
-          /*#__PURE__*/React.createElement("li", null, "\u30A4\u30F3\u30DD\u30FC\u30C8\u3059\u308B\u3068\u73FE\u5728\u306E\u8A18\u9332\u306F\u4E0A\u66F8\u304D\u3055\u308C\u307E\u3059")
+          /*#__PURE__*/React.createElement("li", null, "\u300C\u88DC\u8DB3\u5206\u306E\u307F\u8FFD\u52A0\u300D\u3092\u9078\u3076\u3068\u3001\u73FE\u5728\u306E\u8A18\u9332\u306F\u6B8B\u3057\u305F\u307E\u307E\u65B0\u3057\u3044\u8A18\u9332\u3060\u3051\u8FFD\u52A0\u3055\u308C\u307E\u3059\uFF08\u91CD\u8907\u306F\u81EA\u52D5\u3067\u30B9\u30AD\u30C3\u30D7\uFF09"),
+          /*#__PURE__*/React.createElement("li", null, "\u300C\u5168\u3066\u4E0A\u66F8\u304D\u300D\u3092\u9078\u3076\u3068\u3001\u73FE\u5728\u306E\u8A18\u9332\u306F\u6D88\u3048\u3066JSON\u306E\u5185\u5BB9\u306B\u5B8C\u5168\u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059")
         )
       )
     ),
@@ -3019,7 +3065,7 @@ function DataTab(_ref_dt) {
     },
       /*#__PURE__*/React.createElement("div", {style:{color:"#9a3412",fontSize:12,fontWeight:700,marginBottom:4}}, "⚠️ ご注意"),
       /*#__PURE__*/React.createElement("ul", {style:{margin:0,paddingLeft:16,color:"#c2410c",fontSize:11,lineHeight:1.8,listStyle:"disc"}},
-        /*#__PURE__*/React.createElement("li", null, "\u30A4\u30F3\u30DD\u30FC\u30C8\u306F\u73FE\u5728\u306E\u30C7\u30FC\u30BF\u3092\u5B8C\u5168\u306B\u4E0A\u66F8\u304D\u3057\u307E\u3059"),
+        /*#__PURE__*/React.createElement("li", null, "\u300C\u5168\u3066\u4E0A\u66F8\u304D\u300D\u3092\u9078\u3076\u3068\u73FE\u5728\u306E\u30C7\u30FC\u30BF\u306F\u5B8C\u5168\u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059\uFF08\u5FC3\u914D\u306A\u3068\u304D\u306F\u300C\u88DC\u8DB3\u5206\u306E\u307F\u8FFD\u52A0\u300D\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044\uFF09"),
         /*#__PURE__*/React.createElement("li", null, "\u4E0A\u66F8\u304D\u524D\u306B\u5FC5\u305A\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3067\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u3092\u53D6\u3063\u3066\u304F\u3060\u3055\u3044"),
         /*#__PURE__*/React.createElement("li", null, "\u3053\u306E\u30A2\u30D7\u30EA\u306E\u30C7\u30FC\u30BF\u306F\u304A\u4F7F\u3044\u306E\u30D6\u30E9\u30A6\u30B6\u306E\u30ED\u30FC\u30AB\u30EB\u30B9\u30C8\u30EC\u30FC\u30B8\u306B\u4FDD\u5B58\u3055\u308C\u307E\u3059")
       )
